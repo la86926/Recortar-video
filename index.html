@@ -888,14 +888,15 @@ const S = {
   exportState:null, exportGain:null, projectName:'video',
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null,
-  stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null
+  stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null,
+  floatPointers:new Map(), floatGesture:null
 };
 
 /* ======== BLOQUEO GLOBAL DE ARRASTRE ========
    Mientras haya un gesto activo sobre un control, se cancela
    cualquier desplazamiento del navegador. */
 document.addEventListener('touchmove', e=>{
-  if(S.drag || S.sdrag || S.pinch || S.floatDrag) e.preventDefault();
+  if(S.drag || S.sdrag || S.pinch || S.floatDrag || S.floatGesture) e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('dragstart', e=>e.preventDefault());
@@ -1564,6 +1565,10 @@ els.floatPreviewToggle.addEventListener('click',()=>{
   els.floatPreviewToggle.setAttribute('aria-label',S.floatingPreview?'Desactivar vista previa flotante':'Activar vista previa flotante');
   els.floatingPreview.classList.toggle('hidden',!S.floatingPreview);
   els.floatingPreview.setAttribute('aria-hidden',String(!S.floatingPreview));
+  if(!S.floatingPreview){
+    S.floatPointers.clear(); S.floatDrag=null; S.floatGesture=null;
+    els.floatingPreview.classList.remove('dragging');
+  }
   needsDraw=true;
 });
 function moveFloatingPreview(clientX,clientY){
@@ -1578,22 +1583,59 @@ function moveFloatingPreview(clientX,clientY){
 }
 els.floatingPreview.addEventListener('pointerdown',e=>{
   if(!S.floatingPreview) return;
+  S.floatPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   const rect=els.floatingPreview.getBoundingClientRect();
-  S.floatDrag={id:e.pointerId,dx:e.clientX-rect.left,dy:e.clientY-rect.top};
   els.floatingPreview.style.left=rect.left+'px';
   els.floatingPreview.style.top=rect.top+'px';
   els.floatingPreview.style.right='auto';
+  if(S.floatPointers.size===1){
+    S.floatDrag={id:e.pointerId,dx:e.clientX-rect.left,dy:e.clientY-rect.top};
+  }else if(S.floatPointers.size===2){
+    const points=[...S.floatPointers.values()];
+    const midpoint={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2};
+    S.floatGesture={
+      distance:Math.max(1,Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y)),
+      width:rect.width,height:rect.height,
+      anchorX:(midpoint.x-rect.left)/Math.max(1,rect.width),
+      anchorY:(midpoint.y-rect.top)/Math.max(1,rect.height)
+    };
+    S.floatDrag=null;
+  }
   els.floatingPreview.classList.add('dragging');
   try{ els.floatingPreview.setPointerCapture(e.pointerId); }catch(err){}
   e.preventDefault();
 },{passive:false});
 els.floatingPreview.addEventListener('pointermove',e=>{
-  if(!S.floatDrag||S.floatDrag.id!==e.pointerId) return;
-  moveFloatingPreview(e.clientX,e.clientY); e.preventDefault();
+  if(!S.floatPointers.has(e.pointerId)) return;
+  S.floatPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(S.floatGesture&&S.floatPointers.size>=2){
+    const points=[...S.floatPointers.values()].slice(0,2);
+    const midpoint={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2};
+    const distance=Math.max(1,Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y));
+    const aspect=S.floatGesture.height/Math.max(1,S.floatGesture.width);
+    const maxWidth=Math.max(110,Math.min(560,window.innerWidth-16,(window.innerHeight-16)/Math.max(.1,aspect)));
+    const width=Math.min(maxWidth,Math.max(110,S.floatGesture.width*distance/S.floatGesture.distance));
+    const height=width*aspect, margin=8;
+    const left=Math.min(window.innerWidth-width-margin,Math.max(margin,midpoint.x-S.floatGesture.anchorX*width));
+    const top=Math.min(window.innerHeight-height-margin,Math.max(margin,midpoint.y-S.floatGesture.anchorY*height));
+    els.floatingPreview.style.width=width+'px';
+    els.floatingPreview.style.left=left+'px';
+    els.floatingPreview.style.top=top+'px';
+    els.floatingPreview.style.right='auto';
+    e.preventDefault(); return;
+  }
+  if(S.floatDrag&&S.floatDrag.id===e.pointerId){
+    moveFloatingPreview(e.clientX,e.clientY); e.preventDefault();
+  }
 },{passive:false});
 function endFloatingDrag(e){
-  if(!S.floatDrag||S.floatDrag.id!==e.pointerId) return;
-  S.floatDrag=null; els.floatingPreview.classList.remove('dragging');
+  S.floatPointers.delete(e.pointerId);
+  if(S.floatGesture&&S.floatPointers.size<2){
+    S.floatGesture=null; S.floatDrag=null;
+  }else if(S.floatDrag&&S.floatDrag.id===e.pointerId){
+    S.floatDrag=null;
+  }
+  if(!S.floatPointers.size) els.floatingPreview.classList.remove('dragging');
 }
 els.floatingPreview.addEventListener('pointerup',endFloatingDrag);
 els.floatingPreview.addEventListener('pointercancel',endFloatingDrag);
