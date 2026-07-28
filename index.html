@@ -315,6 +315,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 .transport{display:flex;align-items:center;gap:10px;margin-top:12px}
 .transport .btn{flex:1}
 .tc{font:600 13px var(--mono);color:var(--text-2);flex:0 0 auto;min-width:98px;text-align:right}
+#playBtn{
+  border-color:transparent;background:var(--action-grad);color:var(--on-action);
+  box-shadow:0 8px 20px rgba(82,106,71,.20);
+}
+html[data-theme="dark"] #playBtn{
+  background:linear-gradient(180deg,#A9B99F 0%,#8FA783 100%);
+  color:#10150D;box-shadow:0 8px 22px rgba(0,0,0,.28);
+}
 
 /* ==================== BARRA DE ACCIÓN ==================== */
 .bar{
@@ -360,6 +368,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 }
 .timeline-meta{display:flex;justify-content:space-between;gap:10px;margin:3px 0 12px;color:var(--text-3);font:600 11.5px var(--mono)}
 .shortcut{font:650 11px var(--mono);padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.timeline-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.timeline-actions .btn{width:100%}
+.timeline-actions #deleteClip{grid-column:1/-1}
+.edit-notice{
+  min-height:36px;margin:0 0 10px;padding:9px 11px;border-radius:10px;
+  background:var(--surface-2);color:var(--text-2);font-size:12px;line-height:1.4;
+}
+.edit-notice.ok{background:var(--brand-soft);color:var(--ink)}
+.edit-notice.error{background:rgba(179,64,47,.12);color:var(--danger)}
 @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
 
 /* ==================== APPLE PREMIUM REFRESH ==================== */
@@ -596,7 +613,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         </div>
         <div class="badge" id="badge">—</div>
       </div>
-      <p class="hint" style="margin-top:10px">Arrastra cualquier parte de la cuadrícula para mover el recuadro. Usa únicamente sus bordes o esquinas para cambiar el tamaño.</p>
+      <p class="hint" style="margin-top:10px">Toca el video para reproducir o pausar. Arrastra la cuadrícula para mover el recuadro y usa sus bordes o esquinas para cambiar el tamaño.</p>
 
       <div class="transport">
         <button class="btn" id="playBtn">▶︎ Reproducir</button>
@@ -621,6 +638,21 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         <button class="btn tiny ghost" id="flipV">⇅ Voltear</button>
         <button class="btn tiny ghost" id="resetCrop">Restablecer</button>
       </div>
+    </section>
+
+    <section class="card" id="projectCard">
+      <h2>Línea de edición <span class="r" id="projectDur">00:00.00</span></h2>
+      <p class="hint">Selecciona un segmento, coloca el cabezal en el punto exacto y córtalo. El archivo final unirá todos los segmentos en este orden.</p>
+      <div class="timeline" id="timeline"></div>
+      <div class="timeline-meta"><span id="clipCount">0 segmentos</span><span>Atajo de corte <span class="shortcut">T</span></span></div>
+      <p class="edit-notice" id="editNotice" aria-live="polite">Coloca el cabezal dentro del segmento y pulsa “Cortar en el cabezal”.</p>
+      <input type="file" id="appendFile" accept="video/*" hidden>
+      <div class="timeline-actions">
+        <button class="btn tiny ghost" id="addVideo">＋ Añadir video</button>
+        <button class="btn tiny primary" id="splitClip">✂︎ Cortar en el cabezal</button>
+        <button class="btn tiny danger" id="deleteClip">Eliminar segmento seleccionado</button>
+      </div>
+      <button class="btn ghost wide" id="pick2" style="margin-top:9px">Comenzar otro proyecto</button>
     </section>
 
     <section class="card">
@@ -742,20 +774,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       </div>
     </section>
 
-    <section class="card" id="projectCard">
-      <h2>Línea de edición <span class="r" id="projectDur">00:00.00</span></h2>
-      <p class="hint">Cada bloque es un segmento. Selecciónalo, coloca el cabezal y divídelo; el archivo final los unirá en este orden.</p>
-      <div class="timeline" id="timeline"></div>
-      <div class="timeline-meta"><span id="clipCount">0 segmentos</span><span>Dividir <span class="shortcut">⌘ T</span></span></div>
-      <input type="file" id="appendFile" accept="video/*" hidden>
-      <div class="row">
-        <button class="btn tiny ghost" id="addVideo" style="flex:1">＋ Añadir video</button>
-        <button class="btn tiny ghost" id="splitClip" style="flex:1">Dividir aquí</button>
-        <button class="btn tiny danger" id="deleteClip" style="flex:1">Eliminar segmento</button>
-      </div>
-      <button class="btn ghost wide" id="pick2" style="margin-top:9px">Comenzar otro proyecto</button>
-    </section>
-
   </div>
 </main>
 </div>
@@ -788,7 +806,8 @@ const els = {
   outVideo:$('#outVideo'), outMeta:$('#outMeta'), dl:$('#dl'), share:$('#share'),
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
   appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'),
-  splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'), clipCount:$('#clipCount')
+  splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'), clipCount:$('#clipCount'),
+  editNotice:$('#editNotice')
 };
 const octx = els.out.getContext('2d');
 
@@ -798,7 +817,7 @@ const S = {
   rot:0, flipH:false, flipV:false,
   audio:null, audioBroken:false,
   exporting:false, rec:null, chunks:[], lock:null, blobUrl:null,
-  drag:null, tdrag:null, sdrag:false, previewOnly:false,
+  drag:null, stageTap:null, tdrag:null, sdrag:false, previewOnly:false,
   sources:[], clips:[], activeClip:-1, sourceId:null, serial:0, thumbToken:0, activationToken:0,
   exportState:null, projectName:'video'
 };
@@ -975,20 +994,30 @@ function commitActiveRange(refresh=true){
   clip.start=S.start; clip.end=S.end;
   if(refresh) renderTimeline();
 }
+function showEditNotice(message,type=''){
+  els.editNotice.textContent=message;
+  els.editNotice.className='edit-notice'+(type?' '+type:'');
+}
 function splitActiveClip(){
   if(S.exporting) return;
-  const clip=S.clips[S.activeClip]; if(!clip) return;
+  const clip=S.clips[S.activeClip];
+  if(!clip){ showEditNotice('Primero selecciona un segmento.','error'); return; }
   const t=els.video.currentTime;
   if(t<=clip.start+0.05||t>=clip.end-0.05){
-    alert('Coloca el cabezal dentro del segmento, lejos de sus bordes, y vuelve a dividir.');
+    showEditNotice('El cabezal debe estar dentro del segmento, no sobre su inicio o final.','error');
     return;
   }
   const left={...clip,id:uid(),end:t};
   const right={...clip,id:uid(),start:t};
   const index=S.activeClip;
   S.clips.splice(index,1,left,right);
+  S.activeClip=index+1;
+  renderTimeline();
+  showEditNotice('Corte creado en '+fmt(t)+'. El segmento derecho quedó seleccionado.','ok');
   buzz(12);
-  activateClip(index+1,{seek:t});
+  activateClip(index+1,{seek:t}).catch(()=>{
+    showEditNotice('El corte se creó, pero no se pudo abrir su vista previa.','error');
+  });
 }
 async function deleteActiveClip(){
   if(S.exporting) return;
@@ -996,7 +1025,10 @@ async function deleteActiveClip(){
   const index=S.activeClip;
   const removed=S.clips[index];
   S.clips.splice(index,1);
-  await activateClip(Math.min(index,S.clips.length-1),{seek:null});
+  S.activeClip=Math.min(index,S.clips.length-1);
+  renderTimeline();
+  showEditNotice('Segmento eliminado.','ok');
+  await activateClip(S.activeClip,{seek:null});
   if(!S.clips.some(c=>c.sourceId===removed.sourceId)){
     const source=sourceById(removed.sourceId);
     if(source) URL.revokeObjectURL(source.url);
@@ -1079,18 +1111,21 @@ function hitZone(clientX, clientY){
 els.stage.addEventListener('pointerdown', e=>{
   if(!S.VW) return;
   const zone = hitZone(e.clientX, e.clientY);
-  if(!zone) return;
   const r=els.stage.getBoundingClientRect();
   const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
-  S.drag = (zone==='move') ? {mode:'move', ox:px-S.crop.x, oy:py-S.crop.y} : {mode:zone};
+  S.stageTap={x:e.clientX,y:e.clientY,at:performance.now(),zone,moved:false};
+  S.drag = zone ? ((zone==='move')
+    ? {mode:'move',ox:px-S.crop.x,oy:py-S.crop.y}
+    : {mode:zone}) : null;
   els.stage.setPointerCapture(e.pointerId);
-  markHandle(zone); buzz(8);
+  if(zone){ markHandle(zone); buzz(8); }
   e.preventDefault();
 }, {passive:false});
 els.stage.addEventListener('pointermove', e=>{
-  if(!S.drag){
-    return;
-  }
+  if(!S.stageTap) return;
+  const distance=Math.hypot(e.clientX-S.stageTap.x,e.clientY-S.stageTap.y);
+  if(distance>7) S.stageTap.moved=true;
+  if(!S.drag||!S.stageTap.moved){ e.preventDefault(); return; }
   const r=els.stage.getBoundingClientRect();
   const px=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
   const py=Math.min(1,Math.max(0,(e.clientY-r.top)/r.height));
@@ -1101,7 +1136,17 @@ els.stage.addEventListener('pointermove', e=>{
   syncCrop(); syncBadge(); markHandle(S.drag.mode);
   e.preventDefault();
 }, {passive:false});
-['pointerup','pointercancel'].forEach(ev=>els.stage.addEventListener(ev, ()=>{ S.drag=null; markHandle(null); syncAll(); }));
+els.stage.addEventListener('pointerup',()=>{
+  const tap=S.stageTap;
+  const shouldToggle=!!tap&&!tap.moved&&(tap.zone===null||tap.zone==='move')&&(performance.now()-tap.at<500);
+  const changed=!!S.drag&&!!tap&&tap.moved;
+  S.drag=null; S.stageTap=null; markHandle(null);
+  if(changed) syncAll();
+  if(shouldToggle) togglePlayback();
+});
+els.stage.addEventListener('pointercancel',()=>{
+  S.drag=null; S.stageTap=null; markHandle(null); syncAll();
+});
 
 function markHandle(zone){
   els.shade.querySelectorAll('.hnd').forEach(n=>n.classList.toggle('on', !!zone && n.dataset.z===zone));
@@ -1210,12 +1255,28 @@ function loop(){
   requestAnimationFrame(loop);
 }
 els.video.addEventListener('seeked',()=>{ needsDraw=true; els.clock.textContent=fmt(els.video.currentTime); syncScrub(); });
-els.video.addEventListener('play',()=>{ els.playBtn.textContent='❚❚ Pausar'; ensureAudio(); });
-els.video.addEventListener('pause',()=>{ els.playBtn.textContent='▶︎ Reproducir'; });
-els.playBtn.addEventListener('click',()=>{
-  const v=els.video;
-  if(v.paused){ ensureAudio(); v.play().catch(()=>{}); } else v.pause();
+els.video.addEventListener('play',()=>{
+  els.playBtn.textContent='❚❚ Pausar';
+  els.playBtn.setAttribute('aria-label','Pausar video');
+  els.stage.classList.add('playing');
+  ensureAudio();
 });
+els.video.addEventListener('pause',()=>{
+  els.playBtn.textContent='▶︎ Reproducir';
+  els.playBtn.setAttribute('aria-label','Reproducir video');
+  els.stage.classList.remove('playing');
+});
+function togglePlayback(){
+  const v=els.video;
+  if(!S.dur||S.exporting) return;
+  if(v.paused){
+    if(v.ended||v.currentTime>=S.dur-0.02) v.currentTime=S.start;
+    ensureAudio(); v.play().catch(()=>{});
+  }else{
+    v.pause();
+  }
+}
+els.playBtn.addEventListener('click',togglePlayback);
 $('#prevRange').addEventListener('click',()=>{
   S.previewOnly=true; els.video.currentTime=S.start; ensureAudio(); els.video.play().catch(()=>{});
 });
@@ -1553,6 +1614,9 @@ window.addEventListener('keydown',e=>{
 },true);
 document.addEventListener('keydown', e=>{
   if(!S.dur||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='t'){
+    e.preventDefault(); splitActiveClip(); return;
+  }
   if(e.key===' '){ e.preventDefault(); els.playBtn.click(); }
   if(e.key==='i'){ S.start=Math.min(els.video.currentTime,S.end-0.05); syncTrim(); commitActiveRange(); }
   if(e.key==='o'){ S.end=Math.max(els.video.currentTime,S.start+0.05); syncTrim(); commitActiveRange(); }
