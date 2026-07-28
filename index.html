@@ -1544,8 +1544,41 @@ function drawCachedScrubPreview(time){
   if(S.floatingPreview) paint(fctx,els.floatingCanvas);
   return true;
 }
-function downloadCurrentFrame(){
+function waitForCurrentVideoFrame(){
+  const video=els.video;
+  if(!video.seeking&&video.readyState>=2) return Promise.resolve();
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{
+      if(done) return;
+      done=true;
+      video.removeEventListener('seeked',finish);
+      video.removeEventListener('loadeddata',finish);
+      resolve();
+    };
+    video.addEventListener('seeked',finish);
+    video.addEventListener('loadeddata',finish);
+    setTimeout(finish,1200);
+  });
+}
+async function downloadCurrentFrame(){
   if(!S.dur||S.exporting) return;
+  const clip=S.clips[S.activeClip], source=clip&&sourceById(clip.sourceId);
+  if(!clip||!source) return;
+  els.saveFrame.disabled=true;
+  await waitForCurrentVideoFrame();
+  if(els.video.currentSrc!==source.url){
+    els.saveFrame.disabled=false;
+    showEditNotice('Espera un momento a que aparezca el fotograma.','error');
+    return;
+  }
+  const size=outSize();
+  const frame=document.createElement('canvas');
+  frame.width=size.w; frame.height=size.h;
+  const frameContext=frame.getContext('2d',{alpha:false});
+  frameContext.imageSmoothingEnabled=true;
+  frameContext.imageSmoothingQuality='high';
+  drawComposite(frameContext,size.w,size.h);
   const filename=S.projectName+'_fotograma_'+fmt(currentProjectTime()).replace(/[:.]/g,'-')+'.png';
   const save=(href,revoke)=>{
     const download=document.createElement('a');
@@ -1560,16 +1593,24 @@ function downloadCurrentFrame(){
         if(revoke) URL.revokeObjectURL(href);
       }
     },0);
-    showEditNotice('Fotograma guardado en PNG.','ok');
+    els.saveFrame.disabled=false;
+    showEditNotice('Fotograma guardado en PNG con resolución original.','ok');
   };
-  if(typeof els.out.toBlob==='function'){
-    els.out.toBlob(blob=>{
-      if(!blob){ showEditNotice('No se pudo guardar el fotograma.','error'); return; }
+  if(typeof frame.toBlob==='function'){
+    frame.toBlob(blob=>{
+      if(!blob){
+        els.saveFrame.disabled=false;
+        showEditNotice('No se pudo guardar el fotograma.','error');
+        return;
+      }
       save(URL.createObjectURL(blob),true);
     },'image/png');
   }else{
-    try{ save(els.out.toDataURL('image/png'),false); }
-    catch(e){ showEditNotice('No se pudo guardar el fotograma.','error'); }
+    try{ save(frame.toDataURL('image/png'),false); }
+    catch(e){
+      els.saveFrame.disabled=false;
+      showEditNotice('No se pudo guardar el fotograma.','error');
+    }
   }
 }
 els.saveFrame.addEventListener('click',downloadCurrentFrame);
@@ -1867,8 +1908,10 @@ function applyTimelineZoom(zoom,anchorRatio=.5,anchorX=null){
 }
 els.projectStrip.addEventListener('pointerdown',e=>{
   S.timelinePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  try{ els.projectStrip.setPointerCapture(e.pointerId); }catch(err){}
   if(S.timelinePointers.size===2){
+    for(const pointerId of S.timelinePointers.keys()){
+      try{ els.projectStrip.setPointerCapture(pointerId); }catch(err){}
+    }
     const points=[...S.timelinePointers.values()];
     const rect=els.projectStrip.getBoundingClientRect();
     const midpoint=(points[0].x+points[1].x)/2-rect.left;
