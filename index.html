@@ -517,6 +517,21 @@ html[data-theme="dark"] #timeInput{box-shadow:none}
 }
 .floating-preview.dragging{cursor:grabbing;box-shadow:0 18px 50px rgba(0,0,0,.38)}
 .floating-preview canvas{display:block;width:100%;height:auto;border-radius:12px;background:#000}
+.floating-close{
+  position:absolute;z-index:3;top:8px;right:8px;width:30px;height:30px;padding:0;
+  display:grid;place-items:center;appearance:none;border:1px solid rgba(255,255,255,.22);
+  border-radius:999px;background:rgba(28,28,30,.70);color:#fff;cursor:pointer;
+  box-shadow:0 2px 9px rgba(0,0,0,.24);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  touch-action:manipulation;transition:transform .15s ease,background .18s ease
+}
+.floating-close::before,.floating-close::after{
+  content:"";position:absolute;width:13px;height:1.7px;border-radius:999px;background:currentColor
+}
+.floating-close::before{transform:rotate(45deg)}
+.floating-close::after{transform:rotate(-45deg)}
+.floating-close:hover{background:rgba(44,44,46,.88)}
+.floating-close:active{transform:scale(.88)}
+.floating-close:focus-visible{outline:3px solid rgba(100,210,255,.55);outline-offset:2px}
 .floating-preview.hidden{display:none}
 #floatPreviewToggle[aria-pressed="true"]{background:var(--action-grad);color:var(--on-action)}
 @media(max-width:700px){
@@ -748,9 +763,9 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       <div class="drop-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5"></path><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"></path></svg>
       </div>
-      <p class="drop-title">Arrastra y suelta un video aquí</p>
+      <p class="drop-title">Arrastra y suelta un video o GIF aquí</p>
     </div>
-    <input type="file" id="file" accept="video/*" hidden>
+    <input type="file" id="file" accept="video/*,image/gif,.gif" hidden>
   </section>
 
   <div id="editor" class="hidden">
@@ -821,7 +836,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       </div>
 
       <div class="edit-toast" id="editNotice" aria-live="polite"></div>
-      <input type="file" id="appendFile" accept="video/*" hidden>
+      <input type="file" id="appendFile" accept="video/*,image/gif,.gif" hidden>
       <div class="editor-toolbar" role="toolbar" aria-label="Herramientas de edición">
         <button class="icon-btn" id="addVideo" type="button" aria-label="Añadir video" title="Añadir video">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 9 4-2v10l-4-2M7 12h6M10 9v6"/></svg>
@@ -914,11 +929,14 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 </main>
 </div>
 
-<div class="floating-preview hidden" id="floatingPreview" aria-hidden="true"><canvas id="floatingCanvas"></canvas></div>
+<div class="floating-preview hidden" id="floatingPreview" aria-hidden="true">
+  <canvas id="floatingCanvas"></canvas>
+  <button class="floating-close" id="floatingClose" type="button" aria-label="Cerrar vista previa flotante" title="Cerrar"></button>
+</div>
 <div class="file-drop-overlay" id="dropOverlay" aria-hidden="true">
   <div>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"></path><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"></path></svg>
-    <span>Suelta el video aquí</span>
+    <span>Suelta el video o GIF aquí</span>
   </div>
 </div>
 
@@ -933,6 +951,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
   </div>
 </div>
 
+<script src="gifuct.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -941,7 +960,7 @@ const els = {
   file:$('#file'), video:$('#video'), stage:$('#stage'), shade:$('#shade'), badge:$('#badge'), grip:$('#grip'),
   out:$('#out'), saveFrame:$('#saveFrame'), strip:$('#strip'), projectStrip:$('#projectStrip'), timelineContent:$('#timelineContent'),
   projectPlayhead:$('#projectPlayhead'), floatingPreview:$('#floatingPreview'),
-  floatingCanvas:$('#floatingCanvas'), floatPreviewToggle:$('#floatPreviewToggle'),
+  floatingCanvas:$('#floatingCanvas'), floatingClose:$('#floatingClose'), floatPreviewToggle:$('#floatPreviewToggle'),
   scrub:$('#scrub'), sfill:$('#sfill'), sknob:$('#sknob'), scrubLab:$('#scrubLab'),
   playBtn:$('#playBtn'), timeInput:$('#timeInput'), stepBack:$('#stepBack'), stepForward:$('#stepForward'),
   ratios:$('#ratios'), cropInfo:$('#cropInfo'), keepAudio:$('#keepAudio'),
@@ -969,7 +988,7 @@ const S = {
   drag:null, stageTap:null, sdrag:false, advancing:false,
   sources:[], clips:[], activeClip:-1, sourceId:null, serial:0, thumbToken:0, activationToken:0,
   exportState:null, exportGain:null, exportMonitorDisconnected:false, exportElementVolume:null,
-  sourceCapture:null, projectName:'video',
+  sourceCapture:null, projectName:'video', gifImporting:false,
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
   scrubTargetTime:0, liveScrubBusy:false, liveScrubQueuedTime:null, liveScrubGeneration:0,
@@ -1070,7 +1089,104 @@ function newClip(sourceId,start,end,extra={}){
   return {id:uid(),sourceId,start,end,fadeAudioIn:0,fadeAudioOut:0,fadeVideoIn:0,fadeVideoOut:0,reversed:false,...extra};
 }
 function sourceById(id){ return S.sources.find(x=>x.id===id); }
-function inspectFile(f){
+function isGifFile(file){
+  return !!file&&(String(file.type||'').toLowerCase()==='image/gif'||/\.gif$/i.test(String(file.name||'')));
+}
+function gifRecorderMime(){
+  const candidates=['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  for(const mime of candidates){
+    try{ if(MediaRecorder.isTypeSupported(mime)) return mime; }catch(err){}
+  }
+  return '';
+}
+function gifImportStatus(message){
+  const title=document.querySelector('.drop-title');
+  if(!els.dropCard.classList.contains('hidden')&&title) title.textContent=message;
+  else showEditNotice(message);
+}
+async function convertGifToEditableVideo(file){
+  if(!window.GIFUCT) throw new Error('No se pudo cargar el lector de GIF.');
+  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
+    throw new Error('Este navegador no permite convertir GIF para editarlo.');
+  }
+  gifImportStatus('Preparando GIF…');
+  const buffer=await file.arrayBuffer();
+  const parsed=window.GIFUCT.parseGIF(buffer);
+  const frames=window.GIFUCT.decompressFrames(parsed,true);
+  if(!frames.length) throw new Error('El GIF no contiene fotogramas editables.');
+  const width=Math.max(parsed.lsd&&parsed.lsd.width||0,...frames.map(frame=>frame.dims.left+frame.dims.width));
+  const height=Math.max(parsed.lsd&&parsed.lsd.height||0,...frames.map(frame=>frame.dims.top+frame.dims.height));
+  const duration=frames.reduce((sum,frame)=>sum+Math.max(20,frame.delay||100),0);
+  if(!width||!height||duration>600000||frames.length>5000){
+    throw new Error('El GIF es demasiado grande o largo para prepararlo en el navegador.');
+  }
+  const canvas=document.createElement('canvas');
+  canvas.width=width; canvas.height=height;
+  const ctx=canvas.getContext('2d',{alpha:true});
+  const patchCanvas=document.createElement('canvas');
+  const patchCtx=patchCanvas.getContext('2d',{alpha:true});
+  const stream=canvas.captureStream(30);
+  const mime=gifRecorderMime();
+  const chunks=[];
+  const recorderOptions={videoBitsPerSecond:Math.max(2000000,Math.min(30000000,width*height*10))};
+  if(mime) recorderOptions.mimeType=mime;
+  let recorder;
+  try{ recorder=new MediaRecorder(stream,recorderOptions); }
+  catch(err){ recorder=new MediaRecorder(stream); }
+  const finished=new Promise((resolve,reject)=>{
+    recorder.ondataavailable=event=>{ if(event.data&&event.data.size) chunks.push(event.data); };
+    recorder.onerror=()=>reject(new Error('No se pudo convertir la animación GIF.'));
+    recorder.onstop=resolve;
+  });
+  recorder.start(200);
+  await new Promise(resolve=>setTimeout(resolve,45));
+  let previous=null, restoreImage=null;
+  for(let index=0;index<frames.length;index++){
+    const frame=frames[index];
+    if(previous){
+      if(previous.disposalType===2){
+        ctx.clearRect(previous.dims.left,previous.dims.top,previous.dims.width,previous.dims.height);
+      }else if(previous.disposalType===3&&restoreImage){
+        ctx.putImageData(restoreImage,0,0);
+      }
+    }
+    restoreImage=frame.disposalType===3?ctx.getImageData(0,0,width,height):null;
+    patchCanvas.width=frame.dims.width;
+    patchCanvas.height=frame.dims.height;
+    const patch=patchCtx.createImageData(frame.dims.width,frame.dims.height);
+    patch.data.set(frame.patch);
+    patchCtx.putImageData(patch,0,0);
+    ctx.drawImage(patchCanvas,frame.dims.left,frame.dims.top);
+    const track=stream.getVideoTracks()[0];
+    if(track&&typeof track.requestFrame==='function') track.requestFrame();
+    gifImportStatus('Preparando GIF… '+Math.round((index+1)/frames.length*100)+'%');
+    await new Promise(resolve=>setTimeout(resolve,Math.max(20,frame.delay||100)));
+    previous=frame;
+  }
+  await new Promise(resolve=>setTimeout(resolve,80));
+  recorder.stop();
+  await finished;
+  stream.getTracks().forEach(track=>track.stop());
+  const type=(recorder.mimeType||mime||'video/webm').split(';')[0];
+  const blob=new Blob(chunks,{type});
+  if(!blob.size) throw new Error('No se pudo generar el video editable desde el GIF.');
+  const ext=type.includes('mp4')?'mp4':'webm';
+  const name=(file.name||'animacion').replace(/\.gif$/i,'')+'_GIF_editable.'+ext;
+  return new File([blob],name,{type});
+}
+async function prepareEditableFile(file){
+  if(!isGifFile(file)) return file;
+  if(S.gifImporting) throw new Error('Ya se está preparando otro GIF.');
+  S.gifImporting=true;
+  try{ return await convertGifToEditableVideo(file); }
+  finally{
+    S.gifImporting=false;
+    const title=document.querySelector('.drop-title');
+    if(title) title.textContent='Arrastra y suelta un video o GIF aquí';
+  }
+}
+async function inspectFile(originalFile){
+  const f=await prepareEditableFile(originalFile);
   return new Promise((resolve,reject)=>{
     const url=URL.createObjectURL(f);
     const v=document.createElement('video');
@@ -1082,7 +1198,7 @@ function inspectFile(f){
         clean(); URL.revokeObjectURL(url); reject(new Error('No se pudo leer el video. Prueba con MP4 (H.264).')); return;
       }
       const source={
-        id:uid(),url,file,name:(f.name||'video').replace(/\.[^.]+$/,''),
+        id:uid(),url,file:f,name:(originalFile.name||f.name||'video').replace(/\.[^.]+$/,''),
         duration,width:v.videoWidth,height:v.videoHeight,
         bitrate:Math.max(700000,Math.round((f.size*8)/duration)),fps:30
       };
@@ -1898,8 +2014,8 @@ function togglePlayback(){
   }
 }
 els.playBtn.addEventListener('click',togglePlayback);
-els.floatPreviewToggle.addEventListener('click',()=>{
-  S.floatingPreview=!S.floatingPreview;
+function setFloatingPreview(enabled){
+  S.floatingPreview=!!enabled;
   els.floatPreviewToggle.setAttribute('aria-pressed',String(S.floatingPreview));
   els.floatPreviewToggle.setAttribute('aria-label',S.floatingPreview?'Desactivar vista previa flotante':'Activar vista previa flotante');
   els.floatingPreview.classList.toggle('hidden',!S.floatingPreview);
@@ -1907,9 +2023,45 @@ els.floatPreviewToggle.addEventListener('click',()=>{
   if(!S.floatingPreview){
     S.floatPointers.clear(); S.floatDrag=null; S.floatGesture=null;
     els.floatingPreview.classList.remove('dragging');
+  }else{
+    requestAnimationFrame(clampFloatingPreview);
   }
   needsDraw=true;
+}
+els.floatPreviewToggle.addEventListener('click',()=>setFloatingPreview(!S.floatingPreview));
+els.floatingClose.addEventListener('pointerdown',e=>e.stopPropagation());
+els.floatingClose.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  setFloatingPreview(false);
 });
+function floatingMaxWidth(aspect){
+  const margin=8;
+  return Math.max(48,Math.min(560,window.innerWidth-margin*2,(window.innerHeight-margin*2)/Math.max(.1,aspect)));
+}
+function setFloatingGeometry(width,anchorClientX,anchorClientY,anchorX=.5,anchorY=.5,aspect=null){
+  const rect=els.floatingPreview.getBoundingClientRect();
+  const ratio=aspect||rect.height/Math.max(1,rect.width);
+  const maxWidth=floatingMaxWidth(ratio);
+  const minWidth=Math.min(110,maxWidth);
+  const nextWidth=Math.min(maxWidth,Math.max(minWidth,width));
+  const nextHeight=nextWidth*ratio, margin=8;
+  const maxLeft=Math.max(margin,window.innerWidth-nextWidth-margin);
+  const maxTop=Math.max(margin,window.innerHeight-nextHeight-margin);
+  const left=Math.min(maxLeft,Math.max(margin,anchorClientX-anchorX*nextWidth));
+  const top=Math.min(maxTop,Math.max(margin,anchorClientY-anchorY*nextHeight));
+  els.floatingPreview.style.width=nextWidth+'px';
+  els.floatingPreview.style.left=left+'px';
+  els.floatingPreview.style.top=top+'px';
+  els.floatingPreview.style.right='auto';
+}
+function clampFloatingPreview(){
+  if(!S.floatingPreview) return;
+  const rect=els.floatingPreview.getBoundingClientRect();
+  const aspect=rect.height/Math.max(1,rect.width);
+  const width=Math.min(rect.width,floatingMaxWidth(aspect));
+  setFloatingGeometry(width,rect.left+rect.width/2,rect.top+rect.height/2,.5,.5,aspect);
+}
 function moveFloatingPreview(clientX,clientY){
   if(!S.floatDrag) return;
   const width=els.floatingPreview.offsetWidth, height=els.floatingPreview.offsetHeight;
@@ -1921,7 +2073,8 @@ function moveFloatingPreview(clientX,clientY){
   els.floatingPreview.style.right='auto';
 }
 els.floatingPreview.addEventListener('pointerdown',e=>{
-  if(!S.floatingPreview) return;
+  if(!S.floatingPreview||e.target.closest('.floating-close')) return;
+  clampFloatingPreview();
   S.floatPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   const rect=els.floatingPreview.getBoundingClientRect();
   els.floatingPreview.style.left=rect.left+'px';
@@ -1952,15 +2105,8 @@ els.floatingPreview.addEventListener('pointermove',e=>{
     const midpoint={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2};
     const distance=Math.max(1,Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y));
     const aspect=S.floatGesture.height/Math.max(1,S.floatGesture.width);
-    const maxWidth=Math.max(110,Math.min(560,window.innerWidth-16,(window.innerHeight-16)/Math.max(.1,aspect)));
-    const width=Math.min(maxWidth,Math.max(110,S.floatGesture.width*distance/S.floatGesture.distance));
-    const height=width*aspect, margin=8;
-    const left=Math.min(window.innerWidth-width-margin,Math.max(margin,midpoint.x-S.floatGesture.anchorX*width));
-    const top=Math.min(window.innerHeight-height-margin,Math.max(margin,midpoint.y-S.floatGesture.anchorY*height));
-    els.floatingPreview.style.width=width+'px';
-    els.floatingPreview.style.left=left+'px';
-    els.floatingPreview.style.top=top+'px';
-    els.floatingPreview.style.right='auto';
+    const width=S.floatGesture.width*distance/S.floatGesture.distance;
+    setFloatingGeometry(width,midpoint.x,midpoint.y,S.floatGesture.anchorX,S.floatGesture.anchorY,aspect);
     e.preventDefault(); return;
   }
   if(S.floatDrag&&S.floatDrag.id===e.pointerId){
@@ -1978,6 +2124,15 @@ function endFloatingDrag(e){
 }
 els.floatingPreview.addEventListener('pointerup',endFloatingDrag);
 els.floatingPreview.addEventListener('pointercancel',endFloatingDrag);
+els.floatingPreview.addEventListener('wheel',e=>{
+  if(!S.floatingPreview) return;
+  const rect=els.floatingPreview.getBoundingClientRect();
+  const anchorX=Math.min(1,Math.max(0,(e.clientX-rect.left)/Math.max(1,rect.width)));
+  const anchorY=Math.min(1,Math.max(0,(e.clientY-rect.top)/Math.max(1,rect.height)));
+  const factor=Math.exp(-e.deltaY*.0018);
+  setFloatingGeometry(rect.width*factor,e.clientX,e.clientY,anchorX,anchorY);
+  e.preventDefault();
+},{passive:false});
 
 /* ======== AUDIO ======== */
 function ensureAudio(){
@@ -2529,16 +2684,13 @@ function onRecStop(){
 function syncAll(){ syncCrop(); syncBadge(); syncScrub(); needsDraw=true; }
 window.addEventListener('resize', ()=>{
   if(S.VW) syncCrop();
-  if(S.floatingPreview&&els.floatingPreview.style.left){
-    const rect=els.floatingPreview.getBoundingClientRect(), margin=8;
-    els.floatingPreview.style.left=Math.max(margin,Math.min(rect.left,window.innerWidth-rect.width-margin))+'px';
-    els.floatingPreview.style.top=Math.max(margin,Math.min(rect.top,window.innerHeight-rect.height-margin))+'px';
-  }
+  if(S.floatingPreview) clampFloatingPreview();
 });
 
 function isVideoFile(file){
   return !!file&&(
     String(file.type||'').startsWith('video/')||
+    isGifFile(file)||
     /\.(mp4|m4v|mov|webm|ogv|avi|mkv|3gp|mpeg|mpg)$/i.test(String(file.name||''))
   );
 }
@@ -2575,7 +2727,7 @@ document.addEventListener('drop',async e=>{
   const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]);
   const file=files.find(isVideoFile);
   if(!file){
-    if(files.length) alert('El archivo arrastrado no es un video compatible.');
+    if(files.length) alert('El archivo arrastrado no es un video o GIF compatible.');
     return;
   }
   try{
