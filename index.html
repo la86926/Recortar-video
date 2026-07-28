@@ -194,9 +194,27 @@ html[data-theme="dark"] .chip[aria-pressed="true"]{color:#0E1508}
   border:1.5px dashed var(--brand-line);border-radius:var(--r-lg);
   padding:38px 20px;text-align:center;background:var(--surface);margin-top:14px;
 }
-.drop .big{font-family:var(--serif);font-size:21px;letter-spacing:-.015em;margin:0 0 7px}
+.drop .big{font-family:var(--serif);font-size:21px;letter-spacing:-.015em;margin:0 0 18px}
 .drop p{margin:0 0 18px;font-size:13.5px;color:var(--text-2)}
 .priv{font-size:12px;color:var(--text-3);margin-top:14px}
+.file-drop-overlay{
+  position:fixed;z-index:100;inset:12px;display:grid;place-items:center;
+  border:2px dashed var(--brand-line);border-radius:28px;
+  background:rgba(245,245,247,.88);opacity:0;visibility:hidden;pointer-events:none;
+  backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);
+  transition:opacity .16s ease,visibility .16s ease
+}
+html[data-theme="dark"] .file-drop-overlay{background:rgba(9,10,9,.88)}
+.file-drop-overlay div{
+  display:grid;place-items:center;gap:12px;padding:28px;text-align:center;
+  color:var(--text);font:650 20px var(--sans)
+}
+.file-drop-overlay svg{
+  width:54px;height:54px;padding:13px;border-radius:17px;
+  fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
+  background:var(--brand-soft);color:var(--ink)
+}
+body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
 
 /* ==================== ESCENARIO / RECORTE ==================== */
 .stage{
@@ -675,10 +693,8 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 
   <section id="dropCard" class="drop">
     <p class="big">Elige un video de tu galería</p>
-    <p>Recorta el encuadre y el tiempo, sin subir nada a internet.</p>
     <button class="btn primary" id="pick">Elegir video</button>
     <input type="file" id="file" accept="video/*" hidden>
-    <p class="priv">Todo se procesa dentro de tu navegador.</p>
   </section>
 
   <div id="editor" class="hidden">
@@ -843,6 +859,12 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 </div>
 
 <div class="floating-preview hidden" id="floatingPreview" aria-hidden="true"><canvas id="floatingCanvas"></canvas></div>
+<div class="file-drop-overlay" id="dropOverlay" aria-hidden="true">
+  <div>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"></path><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"></path></svg>
+    <span>Suelta el video aquí</span>
+  </div>
+</div>
 
 <div class="bar" id="bar" style="display:none">
   <div class="inner">
@@ -871,7 +893,7 @@ const els = {
   exportBtn:$('#exportBtn'), cancelBtn:$('#cancelBtn'), result:$('#result'),
   outVideo:$('#outVideo'), outMeta:$('#outMeta'),
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
-  appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'),
+  appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'), dropOverlay:$('#dropOverlay'),
   splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'),
   duplicateClip:$('#duplicateClip'), reverseClip:$('#reverseClip'), undoBtn:$('#undoBtn'), redoBtn:$('#redoBtn'),
   fadeBtn:$('#fadeBtn'), fadeDialog:$('#fadeDialog'), insertDialog:$('#insertDialog'),
@@ -961,20 +983,23 @@ els.insertDialog.addEventListener('click',e=>{
   els.insertDialog.close();
   els.appendFile.value=''; els.appendFile.click();
 });
+async function addVideoFile(f,side='after'){
+  if(S.exporting||!f) return;
+  const source=await inspectFile(f);
+  pushHistory();
+  S.sources.push(source);
+  const here=locateProjectTime(currentProjectTime());
+  const anchor=here?here.index:Math.max(0,S.activeClip);
+  const index=Math.max(0,anchor+(side==='after'?1:0));
+  S.clips.splice(index,0,newClip(source.id,0,source.duration));
+  await activateClip(index,{seek:0});
+  showEditNotice('Video agregado '+(side==='after'?'después':'antes')+' del fragmento.','ok');
+}
 els.appendFile.addEventListener('change', async e=>{
   if(S.exporting) return;
   const f=e.target.files&&e.target.files[0]; if(!f) return;
-  try{
-    const source=await inspectFile(f);
-    pushHistory();
-    S.sources.push(source);
-    const here=locateProjectTime(currentProjectTime());
-    const anchor=here?here.index:Math.max(0,S.activeClip);
-    const index=Math.max(0,anchor+(S.insertSide==='after'?1:0));
-    S.clips.splice(index,0,newClip(source.id,0,source.duration));
-    await activateClip(index,{seek:0});
-    showEditNotice('Video agregado '+(S.insertSide==='after'?'después':'antes')+' del fragmento.','ok');
-  }catch(err){ alert(err.message||'No se pudo añadir este video.'); }
+  try{ await addVideoFile(f,S.insertSide); }
+  catch(err){ alert(err.message||'No se pudo añadir este video.'); }
 });
 function uid(){ return 'c'+(++S.serial); }
 function newClip(sourceId,start,end,extra={}){
@@ -2165,13 +2190,55 @@ window.addEventListener('resize', ()=>{
   }
 });
 
-['dragover','drop'].forEach(ev=>document.addEventListener(ev, e=>{
+function isVideoFile(file){
+  return !!file&&(
+    String(file.type||'').startsWith('video/')||
+    /\.(mp4|m4v|mov|webm|ogv|avi|mkv|3gp|mpeg|mpg)$/i.test(String(file.name||''))
+  );
+}
+let fileDragDepth=0;
+function hasDraggedFiles(e){
+  return Array.from((e.dataTransfer&&e.dataTransfer.types)||[]).includes('Files');
+}
+function hideFileDrop(){
+  fileDragDepth=0;
+  document.body.classList.remove('file-dragging');
+  els.dropOverlay.setAttribute('aria-hidden','true');
+}
+document.addEventListener('dragenter',e=>{
+  if(!hasDraggedFiles(e)) return;
   e.preventDefault();
-  if(ev==='drop'){
-    const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
-    if(f&&f.type.startsWith('video')) loadFile(f);
+  fileDragDepth++;
+  document.body.classList.add('file-dragging');
+  els.dropOverlay.setAttribute('aria-hidden','false');
+});
+document.addEventListener('dragover',e=>{
+  if(!hasDraggedFiles(e)) return;
+  e.preventDefault();
+  if(e.dataTransfer) e.dataTransfer.dropEffect='copy';
+});
+document.addEventListener('dragleave',e=>{
+  if(!document.body.classList.contains('file-dragging')) return;
+  fileDragDepth=Math.max(0,fileDragDepth-1);
+  if(!fileDragDepth) hideFileDrop();
+});
+document.addEventListener('drop',async e=>{
+  e.preventDefault();
+  hideFileDrop();
+  if(S.exporting) return;
+  const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]);
+  const file=files.find(isVideoFile);
+  if(!file){
+    if(files.length) alert('El archivo arrastrado no es un video compatible.');
+    return;
   }
-}));
+  try{
+    if(S.clips.length) await addVideoFile(file,'after');
+    else await loadFile(file);
+  }catch(err){ alert(err.message||'No se pudo abrir el video arrastrado.'); }
+});
+document.addEventListener('dragend',hideFileDrop);
+window.addEventListener('blur',hideFileDrop);
 window.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='t'&&S.dur){
     e.preventDefault();
