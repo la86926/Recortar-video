@@ -951,7 +951,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
   </div>
 </div>
 
-<script src="gifuct.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -1104,8 +1103,25 @@ function gifImportStatus(message){
   if(!els.dropCard.classList.contains('hidden')&&title) title.textContent=message;
   else showEditNotice(message);
 }
+let gifDecoderLoading=null;
+function ensureGifDecoder(){
+  if(window.GIFUCT) return Promise.resolve(window.GIFUCT);
+  if(gifDecoderLoading) return gifDecoderLoading;
+  gifDecoderLoading=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='gifuct.min.js';
+    script.async=true;
+    script.onload=()=>window.GIFUCT?resolve(window.GIFUCT):reject(new Error('El lector de GIF no se inició correctamente.'));
+    script.onerror=()=>reject(new Error('No se pudo cargar el lector de GIF.'));
+    document.head.appendChild(script);
+  }).catch(error=>{
+    gifDecoderLoading=null;
+    throw error;
+  });
+  return gifDecoderLoading;
+}
 async function convertGifToEditableVideo(file){
-  if(!window.GIFUCT) throw new Error('No se pudo cargar el lector de GIF.');
+  await ensureGifDecoder();
   if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
     throw new Error('Este navegador no permite convertir GIF para editarlo.');
   }
