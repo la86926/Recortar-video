@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#F3F5F1">
+<meta name="theme-color" content="#F5F5F7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Recorte — editor de video</title>
 <style>
@@ -16,7 +16,7 @@
    blanco no pelee de temperatura con el acento.
    ========================================================== */
 :root{
-  --bg:#F3F5F1;
+  --bg:#F5F5F7;
   --surface:#FFFFFF;
   --surface-2:#EBEFE8;
   --surface-3:#DDE3D9;
@@ -47,7 +47,7 @@
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 html[data-theme="dark"]{
-  --bg:#0F110E;
+  --bg:#090A09;
   --surface:#181B16;
   --surface-2:#222620;
   --surface-3:#2F342C;
@@ -737,7 +737,7 @@ function applyTheme(){
   const dark = themeMode==='dark' || (themeMode==='auto' && mq.matches);
   document.documentElement.setAttribute('data-theme', dark?'dark':'light');
   const m = document.querySelector('meta[name=theme-color]');
-  if(m) m.setAttribute('content', dark?'#0F110E':'#F3F5F1');
+  if(m) m.setAttribute('content', dark?'#090A09':'#F5F5F7');
 }
 document.querySelectorAll('[data-theme-btn]').forEach(b=>{
   b.addEventListener('click',()=>{
