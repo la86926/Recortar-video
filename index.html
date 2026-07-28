@@ -1535,7 +1535,7 @@ function loop(){
   }
   if(S.audio){
     const clip=renderClip();
-    S.audio.monitor.gain.value=(clip&&clip.reversed?0:1.1*fadeFactor(clip,v.currentTime,'audio'));
+    S.audio.monitor.gain.value=S.exporting?0:(clip&&clip.reversed?0:1.1*fadeFactor(clip,v.currentTime,'audio'));
   }
   requestAnimationFrame(loop);
 }
@@ -1886,6 +1886,7 @@ async function startExport(){
     const a=ensureAudio();
     if(a){
       try{
+        a.monitor.gain.value=0;
         dest=a.ctx.createMediaStreamDestination();
         S.exportGain=a.ctx.createGain();
         S.exportGain.gain.value=1.1;
