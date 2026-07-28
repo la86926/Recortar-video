@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#F5F5F7">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" sizes="128x128" href="edicion-de-video.png">
+<link rel="shortcut icon" type="image/png" href="edicion-de-video.png">
+<link rel="apple-touch-icon" href="edicion-de-video.png">
 <title>Recorte — editor de video</title>
 <style>
 /* ==================== SISTEMA DE COLOR ====================
@@ -113,6 +116,10 @@ header{
 }
 .hd{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{display:flex;align-items:baseline;gap:9px;min-width:0}
+.brand .app-icon{
+  width:34px;height:34px;flex:0 0 auto;align-self:center;display:block;
+  border-radius:9px;filter:drop-shadow(0 3px 8px rgba(22,26,20,.14));
+}
 .brand h1{
   font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:-.022em;
   margin:0;line-height:1;
@@ -573,6 +580,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 <header>
   <div class="wrap hd">
     <div class="brand">
+      <img class="app-icon" src="edicion-de-video.png" width="128" height="128" alt="">
       <h1>Re<em>corte</em></h1>
       <span>Editor de video</span>
     </div>
