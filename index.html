@@ -365,8 +365,6 @@ html[data-theme="dark"] #playBtn{
   background:#FFD166;box-shadow:0 0 0 1px rgba(25,25,25,.68),0 0 8px rgba(255,209,102,.68);
   pointer-events:none;
 }
-.timeline-meta{display:flex;justify-content:space-between;gap:10px;margin:3px 0 12px;color:var(--text-3);font:600 11.5px var(--mono)}
-.shortcut{font:650 11px var(--mono);padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 .scrub-main{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:9px}
 .scrub-main .scrub{margin:0}
 .time-stepper{display:grid;grid-template-columns:68px minmax(110px,1fr) 68px;gap:7px;margin:4px 0 12px}
@@ -722,7 +720,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         <button class="step-btn" id="stepForward" type="button" aria-label="Avanzar un segundo">+1s</button>
       </div>
 
-      <div class="timeline-meta"><span id="clipCount">0 fragmentos</span><span>Atajo <span class="shortcut">T</span></span></div>
       <div class="edit-toast" id="editNotice" aria-live="polite"></div>
       <input type="file" id="appendFile" accept="video/*" hidden>
       <div class="editor-toolbar" role="toolbar" aria-label="Herramientas de edición">
@@ -797,7 +794,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         <label for="keepAudio">Conservar audio</label>
         <span class="sw"><input type="checkbox" id="keepAudio" checked><i></i></span>
       </div>
-      <div class="warn">La resolución, los cuadros por segundo y la calidad se ajustan automáticamente a los videos originales. La exportación ocurre en tiempo real.</div>
     </section>
 
     <section class="card hidden" id="result">
@@ -840,7 +836,7 @@ const els = {
   outVideo:$('#outVideo'), outMeta:$('#outMeta'), dl:$('#dl'), share:$('#share'),
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
   appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'),
-  splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'), clipCount:$('#clipCount'),
+  splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'),
   duplicateClip:$('#duplicateClip'), reverseClip:$('#reverseClip'), undoBtn:$('#undoBtn'),
   fadeBtn:$('#fadeBtn'), fadeDialog:$('#fadeDialog'), insertDialog:$('#insertDialog'),
   fadeAudioIn:$('#fadeAudioIn'), fadeAudioOut:$('#fadeAudioOut'),
@@ -915,9 +911,12 @@ els.addVideo.addEventListener('click',()=>{
   if(typeof els.insertDialog.showModal==='function') els.insertDialog.showModal();
   else{ S.insertSide='after'; els.appendFile.value=''; els.appendFile.click(); }
 });
-els.insertDialog.addEventListener('close',()=>{
-  if(!['before','after'].includes(els.insertDialog.returnValue)) return;
-  S.insertSide=els.insertDialog.returnValue;
+els.insertDialog.addEventListener('click',e=>{
+  const button=e.target.closest('button[value]');
+  if(!button||!['before','after'].includes(button.value)) return;
+  e.preventDefault();
+  S.insertSide=button.value;
+  els.insertDialog.close();
   els.appendFile.value=''; els.appendFile.click();
 });
 els.appendFile.addEventListener('change', async e=>{
@@ -1090,7 +1089,6 @@ function renderTimeline(){
     });
   }
   const n=S.clips.length;
-  els.clipCount.textContent=n+' '+(n===1?'fragmento':'fragmentos');
   els.projectDur.textContent=fmt(total);
   els.splitClip.disabled=!n;
   els.deleteClip.disabled=n<=1;
