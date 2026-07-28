@@ -714,7 +714,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 
     <section class="card" id="projectCard">
       <h2>Recortes <span class="r" id="projectDur">00:00.00</span></h2>
-      <p class="hint">Mueve el deslizador amarillo al segundo exacto y pulsa el icono de tijeras. Cada corte aparecerá como una línea vertical sobre los fotogramas.</p>
 
       <div class="project-strip" id="projectStrip">
         <div class="timeline-content" id="timelineContent">
@@ -2089,7 +2088,7 @@ function onRecStop(){
   els.prog.style.display='none'; els.st.style.display='none';
   els.prog.firstElementChild.style.width='0%';
 
-  if(ex&&ex.restore) activateClip(ex.restore.index,{seek:ex.restore.time});
+  if(ex&&ex.restore) activateClip(ex.restore.index,{seek:ex.restore.time,skipStrip:true});
   if(S.cancelled){ S.chunks=[]; S.cancelled=false; return; }
   if(!S.chunks.length){ alert('No se grabó nada. Intenta de nuevo con un proyecto un poco más largo.'); return; }
 
@@ -2112,7 +2111,6 @@ function onRecStop(){
   const o=ex&&ex.output?ex.output:outSize();
   els.outMeta.textContent=o.w+'×'+o.h+' · '+(blob.size/1048576).toFixed(1)+' MB · '+extFor(type).toUpperCase();
   els.result.classList.remove('hidden');
-  els.result.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 function syncAll(){ syncCrop(); syncBadge(); syncScrub(); needsDraw=true; }
