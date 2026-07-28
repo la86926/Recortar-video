@@ -381,10 +381,13 @@ html[data-theme="dark"] #playBtn{
 
 /* ==================== BARRA DE ACCIÓN ==================== */
 .bar{
-  flex:0 0 auto;background:var(--surface);border-top:1px solid var(--line);
+  position:fixed;z-index:40;left:0;right:0;bottom:0;
+  background:var(--surface);border-top:1px solid var(--line);
   padding:10px 16px calc(10px + env(safe-area-inset-bottom));
 }
 .bar .inner{max-width:600px;margin:0 auto}
+#exportBtn{width:100%;min-height:52px;font-size:16px}
+body.editor-open #scroll{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 .prog{height:6px;border-radius:4px;background:var(--surface-3);overflow:hidden;margin-bottom:8px;display:none}
 .prog i{display:block;height:100%;width:0;background:var(--action-grad);border-radius:4px;transition:width .2s linear}
 .st{font-size:12.5px;color:var(--text-2);text-align:center;margin-bottom:8px;display:none}
@@ -969,7 +972,8 @@ const S = {
   sourceCapture:null, projectName:'video',
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
-  scrubTargetTime:0, stripFrames:[], stripFrameTimes:[],
+  scrubTargetTime:0, liveScrubBusy:false, liveScrubQueuedTime:null, liveScrubGeneration:0,
+  stripFrames:[], stripFrameTimes:[],
   stripTimer:null, suppressTimelineClickUntil:0, trimDrag:null, floatDrag:null,
   floatPointers:new Map(), floatGesture:null
 };
@@ -1143,11 +1147,17 @@ async function activateClip(index,opts={}){
   els.stage.style.aspectRatio = S.VW+' / '+S.VH;
   els.dropCard.classList.add('hidden');
   els.editor.classList.remove('hidden');
+  document.body.classList.add('editor-open');
   els.bar.style.display='block';
   buildRatios();
   const initial=opts.seek==null?(clip.reversed?Math.max(clip.start,clip.end-0.001):clip.start):opts.seek;
   await seekTo(els.video,Math.min(S.end,Math.max(S.start,initial)));
-  syncAll(); renderTimeline();
+  if(opts.quiet){
+    syncCrop();
+  }else{
+    syncAll();
+    renderTimeline();
+  }
   if(!opts.skipStrip) generateStrip();
   needsDraw=true;
 }
@@ -1848,8 +1858,10 @@ function loop(){
     }
   }
   if(S.sdrag){
-    drawCachedScrubPreview(S.scrubTargetTime);
-    needsDraw=false;
+    if(needsDraw&&!v.seeking){
+      drawLivePreviews();
+      needsDraw=false;
+    }
   }else if(!v.paused||S.reversePlaying||needsDraw){
     drawLivePreviews();
     needsDraw=false;
@@ -2016,6 +2028,8 @@ function clearExportAudioRouting(){
 /* ======== DESLIZADOR DEL PROYECTO ======== */
 function beginProjectScrub(element,e){
   if(!projectDuration()) return;
+  S.liveScrubGeneration++;
+  S.liveScrubQueuedTime=null;
   S.scrubWasPlaying=!els.video.paused||S.reversePlaying;
   S.reversePlaying=false;
   els.video.pause();
@@ -2029,10 +2043,45 @@ function finishProjectScrub(){
   const resume=S.scrubWasPlaying;
   const target=S.scrubTargetTime;
   S.sdrag=false;
+  S.liveScrubGeneration++;
+  S.liveScrubQueuedTime=null;
+  S.activationToken++;
   S.scrubWasPlaying=false;
   els.sknob.classList.remove('on');
   els.projectPlayhead.classList.remove('dragging');
   seekProjectTime(target,{keepPlaying:resume});
+}
+function queueLiveScrubPreview(projectTime){
+  S.liveScrubQueuedTime=projectTime;
+  if(!S.liveScrubBusy) flushLiveScrubPreview();
+}
+async function flushLiveScrubPreview(){
+  if(S.liveScrubBusy) return;
+  S.liveScrubBusy=true;
+  const generation=S.liveScrubGeneration;
+  try{
+    while(S.sdrag&&generation===S.liveScrubGeneration&&S.liveScrubQueuedTime!==null){
+      const target=S.liveScrubQueuedTime;
+      S.liveScrubQueuedTime=null;
+      const located=locateProjectTime(target);
+      if(!located) continue;
+      try{
+        if(located.index===S.activeClip){
+          await seekTo(els.video,located.sourceTime);
+        }else{
+          await activateClip(located.index,{seek:located.sourceTime,skipStrip:true,quiet:true});
+        }
+      }catch(err){}
+      if(!S.sdrag||generation!==S.liveScrubGeneration) break;
+      if(S.liveScrubQueuedTime===null){
+        drawLivePreviews();
+        needsDraw=false;
+      }
+    }
+  }finally{
+    S.liveScrubBusy=false;
+    if(S.sdrag&&S.liveScrubQueuedTime!==null) flushLiveScrubPreview();
+  }
 }
 els.scrub.addEventListener('pointerdown', e=>{
   beginProjectScrub(els.scrub,e);
@@ -2048,6 +2097,7 @@ function handleScrub(e){
   S.scrubTargetTime=projectTime;
   setScrubPosition(f,projectTime);
   drawCachedScrubPreview(projectTime);
+  queueLiveScrubPreview(projectTime);
   scrollTimelineToTime(projectTime,true);
 }
 function handlePlayheadScrub(e){
@@ -2066,6 +2116,7 @@ function handlePlayheadScrub(e){
   S.scrubTargetTime=projectTime;
   setScrubPosition(f,projectTime);
   drawCachedScrubPreview(projectTime);
+  queueLiveScrubPreview(projectTime);
 }
 function setScrubPosition(f,time){
   const pct=Math.min(100,Math.max(0,f*100));
