@@ -234,6 +234,11 @@ html[data-theme="dark"] .chip[aria-pressed="true"]{color:#0E1508}
 /* ==================== SALIDA EN VIVO ==================== */
 .outwrap{display:flex;justify-content:center;background:var(--surface-2);border-radius:var(--r-md);padding:12px}
 #out{max-width:100%;max-height:190px;border-radius:8px;display:block;background:#000}
+.frame-save{margin-top:10px;background:var(--surface-2)}
+.frame-save svg{
+  width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round
+}
 
 /* ==================== LÍNEA DE TIEMPO ==================== */
 .project-strip{
@@ -806,9 +811,17 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
     </dialog>
 
     <section class="card">
-      <h2>Resultado en vivo</h2>
+      <h2>Vista previa y fotograma</h2>
       <p class="hint">Así saldrá el archivo final, ya con recorte, giro y espejo aplicados.</p>
       <div class="outwrap"><canvas id="out"></canvas></div>
+      <button class="btn wide frame-save" id="saveFrame" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.5" y="5" width="17" height="14" rx="3"></rect>
+          <circle cx="12" cy="12" r="3.2"></circle>
+          <path d="M8 5l1.2-2h5.6L16 5"></path>
+        </svg>
+        Guardar fotograma
+      </button>
     </section>
 
     <section class="card">
@@ -848,7 +861,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 const $ = s => document.querySelector(s);
 const els = {
   file:$('#file'), video:$('#video'), stage:$('#stage'), shade:$('#shade'), badge:$('#badge'), grip:$('#grip'),
-  out:$('#out'), strip:$('#strip'), projectStrip:$('#projectStrip'), timelineContent:$('#timelineContent'),
+  out:$('#out'), saveFrame:$('#saveFrame'), strip:$('#strip'), projectStrip:$('#projectStrip'), timelineContent:$('#timelineContent'),
   projectPlayhead:$('#projectPlayhead'), floatingPreview:$('#floatingPreview'),
   floatingCanvas:$('#floatingCanvas'), floatPreviewToggle:$('#floatPreviewToggle'),
   scrub:$('#scrub'), sfill:$('#sfill'), sknob:$('#sknob'), scrubLab:$('#scrubLab'),
@@ -1506,6 +1519,35 @@ function drawCachedScrubPreview(time){
   if(S.floatingPreview) paint(fctx,els.floatingCanvas);
   return true;
 }
+function downloadCurrentFrame(){
+  if(!S.dur||S.exporting) return;
+  const filename=S.projectName+'_fotograma_'+fmt(currentProjectTime()).replace(/[:.]/g,'-')+'.png';
+  const save=(href,revoke)=>{
+    const download=document.createElement('a');
+    download.href=href;
+    download.download=filename;
+    download.style.display='none';
+    document.body.appendChild(download);
+    setTimeout(()=>{
+      try{ download.click(); }
+      finally{
+        download.remove();
+        if(revoke) URL.revokeObjectURL(href);
+      }
+    },0);
+    showEditNotice('Fotograma guardado en PNG.','ok');
+  };
+  if(typeof els.out.toBlob==='function'){
+    els.out.toBlob(blob=>{
+      if(!blob){ showEditNotice('No se pudo guardar el fotograma.','error'); return; }
+      save(URL.createObjectURL(blob),true);
+    },'image/png');
+  }else{
+    try{ save(els.out.toDataURL('image/png'),false); }
+    catch(e){ showEditNotice('No se pudo guardar el fotograma.','error'); }
+  }
+}
+els.saveFrame.addEventListener('click',downloadCurrentFrame);
 let needsDraw=true;
 function setPlaybackUI(playing){
   els.playBtn.classList.toggle('playing',!!playing);
@@ -2017,7 +2059,7 @@ async function startExport(){
   rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size) S.chunks.push(ev.data); };
   rec.onstop=onRecStop;
 
-  els.exportBtn.disabled=true; els.exportBtn.textContent='Exportando…';
+  els.exportBtn.disabled=true; els.saveFrame.disabled=true; els.exportBtn.textContent='Exportando…';
   els.cancelBtn.classList.remove('hidden');
   els.prog.style.display='block'; els.st.style.display='block';
   els.result.classList.add('hidden');
@@ -2083,7 +2125,7 @@ function onRecStop(){
   S.exportState=null;
   clearExportAudioRouting();
   if(S.lock){ try{ S.lock.release(); }catch(e){} S.lock=null; }
-  els.exportBtn.disabled=false; els.exportBtn.textContent='Exportar proyecto';
+  els.exportBtn.disabled=false; els.saveFrame.disabled=false; els.exportBtn.textContent='Exportar proyecto';
   els.cancelBtn.classList.add('hidden');
   els.prog.style.display='none'; els.st.style.display='none';
   els.prog.firstElementChild.style.width='0%';
