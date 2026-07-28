@@ -437,8 +437,10 @@ html[data-theme="dark"] #timeInput{box-shadow:none}
   position:fixed;z-index:45;right:max(10px,env(safe-area-inset-right));top:calc(76px + env(safe-area-inset-top));
   width:min(38vw,230px);padding:5px;border:1px solid rgba(255,255,255,.24);border-radius:17px;
   background:rgba(22,24,21,.84);box-shadow:0 14px 42px rgba(0,0,0,.28);
-  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);pointer-events:none
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none
 }
+.floating-preview.dragging{cursor:grabbing;box-shadow:0 18px 50px rgba(0,0,0,.38)}
 .floating-preview canvas{display:block;width:100%;height:auto;border-radius:12px;background:#000}
 .floating-preview.hidden{display:none}
 #floatPreviewToggle[aria-pressed="true"]{background:var(--action-grad);color:var(--on-action)}
@@ -702,8 +704,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         </div>
         <div class="badge" id="badge">—</div>
       </div>
-      <div class="floating-preview hidden" id="floatingPreview" aria-hidden="true"><canvas id="floatingCanvas"></canvas></div>
-
       <div class="row" style="margin-top:10px">
         <button class="btn tiny ghost" id="rotL">↺ 90°</button>
         <button class="btn tiny ghost" id="rotR">↻ 90°</button>
@@ -768,8 +768,8 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
         <button class="icon-btn" id="undoBtn" type="button" aria-label="Deshacer cambio" title="Deshacer">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M5 12h8a6 6 0 0 1 6 6"/></svg>
         </button>
-        <button class="icon-btn" id="resetCrop" type="button" aria-label="Restablecer encuadre" title="Restablecer">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V3m0 0h5M4 3l4 4a8 8 0 1 1-2 9"/><path d="M9 9h6v6H9z"/></svg>
+        <button class="icon-btn" id="redoBtn" type="button" aria-label="Rehacer cambio" title="Rehacer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5M19 12h-8a6 6 0 0 0-6 6"/></svg>
         </button>
         <button class="icon-btn" id="pick2" type="button" aria-label="Comenzar otro proyecto" title="Nuevo proyecto">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h10l4 4v12H4zM14 4v5h5M8 14h6M11 11v6"/></svg>
@@ -837,6 +837,8 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
 </main>
 </div>
 
+<div class="floating-preview hidden" id="floatingPreview" aria-hidden="true"><canvas id="floatingCanvas"></canvas></div>
+
 <div class="bar" id="bar" style="display:none">
   <div class="inner">
     <div class="prog" id="prog"><i></i></div>
@@ -866,7 +868,7 @@ const els = {
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
   appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'),
   splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'),
-  duplicateClip:$('#duplicateClip'), reverseClip:$('#reverseClip'), undoBtn:$('#undoBtn'),
+  duplicateClip:$('#duplicateClip'), reverseClip:$('#reverseClip'), undoBtn:$('#undoBtn'), redoBtn:$('#redoBtn'),
   fadeBtn:$('#fadeBtn'), fadeDialog:$('#fadeDialog'), insertDialog:$('#insertDialog'),
   fadeAudioIn:$('#fadeAudioIn'), fadeAudioOut:$('#fadeAudioOut'),
   fadeVideoIn:$('#fadeVideoIn'), fadeVideoOut:$('#fadeVideoOut'),
@@ -884,16 +886,16 @@ const S = {
   drag:null, stageTap:null, sdrag:false, advancing:false,
   sources:[], clips:[], activeClip:-1, sourceId:null, serial:0, thumbToken:0, activationToken:0,
   exportState:null, exportGain:null, projectName:'video',
-  history:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
+  history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null,
-  stripTimer:null, suppressTimelineClickUntil:0
+  stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null
 };
 
 /* ======== BLOQUEO GLOBAL DE ARRASTRE ========
    Mientras haya un gesto activo sobre un control, se cancela
    cualquier desplazamiento del navegador. */
 document.addEventListener('touchmove', e=>{
-  if(S.drag || S.sdrag || S.pinch) e.preventDefault();
+  if(S.drag || S.sdrag || S.pinch || S.floatDrag) e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('dragstart', e=>e.preventDefault());
@@ -1003,7 +1005,7 @@ async function loadFile(f){
     S.sources=[source];
     S.clips=[newClip(source.id,0,source.duration)];
     S.activeClip=-1; S.sourceId=null; S.projectName=source.name; S.name=source.name;
-    S.history=[]; S.reversePlaying=false; S.timelineZoom=1; S.timelinePointers.clear(); S.pinch=null;
+    S.history=[]; S.redo=[]; S.reversePlaying=false; S.timelineZoom=1; S.timelinePointers.clear(); S.pinch=null;
     els.timelineContent.style.width='100%'; els.projectStrip.scrollLeft=0;
     S.rot=0; S.flipH=false; S.flipV=false;
     S.crop={x:0,y:0,w:1,h:1}; S.ratio=null; S.ratioKey='free';
@@ -1130,6 +1132,7 @@ function renderTimeline(){
   els.fadeBtn.disabled=!n;
   els.reverseClip.disabled=!n;
   els.undoBtn.disabled=!S.history.length;
+  els.redoBtn.disabled=!S.redo.length;
 }
 function showEditNotice(message,type=''){
   clearTimeout(S.toastTimer);
@@ -1138,23 +1141,45 @@ function showEditNotice(message,type=''){
   S.toastTimer=setTimeout(()=>{ els.editNotice.className='edit-toast'; },2600);
 }
 function snapshot(){
-  return {clips:S.clips.map(c=>({...c})),activeClip:S.activeClip,time:currentProjectTime()};
+  return {
+    clips:S.clips.map(c=>({...c})),activeClip:S.activeClip,time:currentProjectTime(),
+    crop:{...S.crop},ratio:S.ratio,ratioKey:S.ratioKey,rot:S.rot,flipH:S.flipH,flipV:S.flipV
+  };
 }
 function pushHistory(){
   S.history.push(snapshot());
   if(S.history.length>60) S.history.shift();
+  S.redo=[];
   els.undoBtn.disabled=false;
+  els.redoBtn.disabled=true;
 }
-async function undoChange(){
-  if(S.exporting||!S.history.length) return;
-  const prior=S.history.pop();
-  S.clips=prior.clips.map(c=>({...c}));
-  const located=locateProjectTime(Math.min(prior.time,projectDuration()));
-  const index=located?located.index:Math.min(Math.max(prior.activeClip,0),S.clips.length-1);
+async function restoreSnapshot(state){
+  S.clips=state.clips.map(c=>({...c}));
+  S.crop={...state.crop}; S.ratio=state.ratio; S.ratioKey=state.ratioKey;
+  S.rot=state.rot; S.flipH=state.flipH; S.flipV=state.flipV;
+  els.customRow.style.display=state.ratioKey==='custom'?'flex':'none';
+  const located=locateProjectTime(Math.min(state.time,projectDuration()));
+  const index=located?located.index:Math.min(Math.max(state.activeClip,0),S.clips.length-1);
   renderTimeline(); generateStrip();
   const clip=S.clips[index];
   await activateClip(index,{seek:located?located.sourceTime:(clip.reversed?clip.end:clip.start),skipStrip:true});
+  renderTimeline(); needsDraw=true;
+}
+async function undoChange(){
+  if(S.exporting||!S.history.length) return;
+  S.redo.push(snapshot());
+  if(S.redo.length>60) S.redo.shift();
+  const prior=S.history.pop();
+  await restoreSnapshot(prior);
   showEditNotice('Cambio deshecho.','ok');
+}
+async function redoChange(){
+  if(S.exporting||!S.redo.length) return;
+  S.history.push(snapshot());
+  if(S.history.length>60) S.history.shift();
+  const next=S.redo.pop();
+  await restoreSnapshot(next);
+  showEditNotice('Cambio rehecho.','ok');
 }
 function splitActiveClip(){
   if(S.exporting) return;
@@ -1215,6 +1240,7 @@ els.deleteClip.addEventListener('click',deleteActiveClip);
 els.duplicateClip.addEventListener('click',duplicateActiveClip);
 els.reverseClip.addEventListener('click',reverseActiveClip);
 els.undoBtn.addEventListener('click',undoChange);
+els.redoBtn.addEventListener('click',redoChange);
 els.fadeBtn.addEventListener('click',()=>{
   const c=S.clips[S.activeClip]; if(!c) return;
   els.fadeAudioIn.value=c.fadeAudioIn||0; els.fadeAudioOut.value=c.fadeAudioOut||0;
@@ -1280,13 +1306,6 @@ function scheduleStripRender(){
 function refreshVisualEdits(){
   syncAll(); scheduleStripRender();
 }
-$('#resetCrop').addEventListener('click',()=>{
-  S.ratioKey='free'; S.ratio=null; S.crop={x:0,y:0,w:1,h:1};
-  S.rot=0; S.flipH=false; S.flipV=false;
-  els.customRow.style.display='none';
-  [...els.ratios.children].forEach((b,i)=>b.setAttribute('aria-pressed',String(PRESETS[i].k==='free')));
-  refreshVisualEdits(); showEditNotice('Encuadre restablecido.','ok');
-});
 $('#rotL').addEventListener('click',()=>{ S.rot=(S.rot+270)%360; refreshVisualEdits(); });
 $('#rotR').addEventListener('click',()=>{ S.rot=(S.rot+90)%360; refreshVisualEdits(); });
 $('#flipH').addEventListener('click',()=>{ S.flipH=!S.flipH; refreshVisualEdits(); });
@@ -1547,6 +1566,37 @@ els.floatPreviewToggle.addEventListener('click',()=>{
   els.floatingPreview.setAttribute('aria-hidden',String(!S.floatingPreview));
   needsDraw=true;
 });
+function moveFloatingPreview(clientX,clientY){
+  if(!S.floatDrag) return;
+  const width=els.floatingPreview.offsetWidth, height=els.floatingPreview.offsetHeight;
+  const margin=8;
+  const left=Math.min(window.innerWidth-width-margin,Math.max(margin,clientX-S.floatDrag.dx));
+  const top=Math.min(window.innerHeight-height-margin,Math.max(margin,clientY-S.floatDrag.dy));
+  els.floatingPreview.style.left=left+'px';
+  els.floatingPreview.style.top=top+'px';
+  els.floatingPreview.style.right='auto';
+}
+els.floatingPreview.addEventListener('pointerdown',e=>{
+  if(!S.floatingPreview) return;
+  const rect=els.floatingPreview.getBoundingClientRect();
+  S.floatDrag={id:e.pointerId,dx:e.clientX-rect.left,dy:e.clientY-rect.top};
+  els.floatingPreview.style.left=rect.left+'px';
+  els.floatingPreview.style.top=rect.top+'px';
+  els.floatingPreview.style.right='auto';
+  els.floatingPreview.classList.add('dragging');
+  try{ els.floatingPreview.setPointerCapture(e.pointerId); }catch(err){}
+  e.preventDefault();
+},{passive:false});
+els.floatingPreview.addEventListener('pointermove',e=>{
+  if(!S.floatDrag||S.floatDrag.id!==e.pointerId) return;
+  moveFloatingPreview(e.clientX,e.clientY); e.preventDefault();
+},{passive:false});
+function endFloatingDrag(e){
+  if(!S.floatDrag||S.floatDrag.id!==e.pointerId) return;
+  S.floatDrag=null; els.floatingPreview.classList.remove('dragging');
+}
+els.floatingPreview.addEventListener('pointerup',endFloatingDrag);
+els.floatingPreview.addEventListener('pointercancel',endFloatingDrag);
 
 /* ======== AUDIO ======== */
 function ensureAudio(){
@@ -1921,7 +1971,14 @@ els.share.addEventListener('click', async ()=>{
 });
 
 function syncAll(){ syncCrop(); syncBadge(); syncScrub(); needsDraw=true; }
-window.addEventListener('resize', ()=>{ if(S.VW) syncCrop(); });
+window.addEventListener('resize', ()=>{
+  if(S.VW) syncCrop();
+  if(S.floatingPreview&&els.floatingPreview.style.left){
+    const rect=els.floatingPreview.getBoundingClientRect(), margin=8;
+    els.floatingPreview.style.left=Math.max(margin,Math.min(rect.left,window.innerWidth-rect.width-margin))+'px';
+    els.floatingPreview.style.top=Math.max(margin,Math.min(rect.top,window.innerHeight-rect.height-margin))+'px';
+  }
+});
 
 ['dragover','drop'].forEach(ev=>document.addEventListener(ev, e=>{
   e.preventDefault();
