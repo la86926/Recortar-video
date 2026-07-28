@@ -824,10 +824,6 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       <h2>Listo</h2>
       <video id="outVideo" controls playsinline></video>
       <p class="meta" id="outMeta"></p>
-      <div class="row">
-        <a class="btn primary" style="flex:1;text-decoration:none" id="dl" download>Descargar</a>
-        <button class="btn ghost" id="share" style="flex:1">Compartir</button>
-      </div>
     </section>
 
   </div>
@@ -861,7 +857,7 @@ const els = {
   ratios:$('#ratios'), cropInfo:$('#cropInfo'), keepAudio:$('#keepAudio'),
   bar:$('#bar'), prog:$('#prog'), st:$('#st'),
   exportBtn:$('#exportBtn'), cancelBtn:$('#cancelBtn'), result:$('#result'),
-  outVideo:$('#outVideo'), outMeta:$('#outMeta'), dl:$('#dl'), share:$('#share'),
+  outVideo:$('#outVideo'), outMeta:$('#outMeta'),
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
   appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'),
   splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'),
@@ -886,6 +882,7 @@ const S = {
   sourceCapture:null, projectName:'video',
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
+  scrubTargetTime:0, stripFrames:[], stripFrameTimes:[],
   stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null,
   floatPointers:new Map(), floatGesture:null
 };
@@ -1109,9 +1106,16 @@ function renderTimeline(){
       b.appendChild(number);
       b.addEventListener('click',async()=>{
         if(performance.now()<S.suppressTimelineClickUntil) return;
-        if(index===S.activeClip){ togglePlayback(); return; }
-        await activateClip(index,{seek:clip.reversed?Math.max(clip.start,clip.end-0.001):clip.start});
-        startCurrentPlayback();
+        S.reversePlaying=false;
+        els.video.pause();
+        setPlaybackUI(false);
+        const seek=clip.reversed?Math.max(clip.start,clip.end-0.001):clip.start;
+        if(index===S.activeClip){
+          syncScrub();
+          needsDraw=true;
+          return;
+        }
+        await activateClip(index,{seek,skipStrip:true});
       });
       els.timeline.appendChild(b);
       offset+=length;
@@ -1482,6 +1486,27 @@ function drawLivePreviews(){
   drawComposite(octx,els.out.width,els.out.height);
   if(S.floatingPreview) drawComposite(fctx,els.floatingCanvas.width,els.floatingCanvas.height);
 }
+function drawCachedScrubPreview(time){
+  const frames=S.stripFrames;
+  if(!frames.length) return false;
+  const total=Math.max(projectDuration(),0.001);
+  const index=Math.min(frames.length-1,Math.max(0,Math.floor(time/total*frames.length)));
+  let frame=frames[index];
+  for(let distance=1;!frame&&distance<frames.length;distance++){
+    frame=frames[index-distance]||frames[index+distance];
+  }
+  if(!frame) return false;
+  const paint=(ctx,canvas)=>{
+    ctx.save();
+    ctx.globalAlpha=1;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    try{ ctx.drawImage(frame,0,0,canvas.width,canvas.height); }catch(e){}
+    ctx.restore();
+  };
+  paint(octx,els.out);
+  if(S.floatingPreview) paint(fctx,els.floatingCanvas);
+  return true;
+}
 let needsDraw=true;
 function setPlaybackUI(playing){
   els.playBtn.classList.toggle('playing',!!playing);
@@ -1524,7 +1549,13 @@ function loop(){
       if(v.currentTime<=clip.start+0.015){ S.reversePlaying=false; advancePreview(); }
     }
   }
-  if(!v.paused||S.reversePlaying||needsDraw){ drawLivePreviews(); needsDraw=false; }
+  if(S.sdrag){
+    drawCachedScrubPreview(S.scrubTargetTime);
+    needsDraw=false;
+  }else if(!v.paused||S.reversePlaying||needsDraw){
+    drawLivePreviews();
+    needsDraw=false;
+  }
   if(!v.paused){
     syncScrub();
     if(!S.exporting&&!S.advancing&&v.currentTime>=S.end-0.02){
@@ -1688,21 +1719,27 @@ function clearExportAudioRouting(){
 els.scrub.addEventListener('pointerdown', e=>{
   if(!projectDuration()) return;
   S.scrubWasPlaying=!els.video.paused||S.reversePlaying;
+  S.reversePlaying=false;
+  els.video.pause();
+  setPlaybackUI(false);
+  S.scrubTargetTime=currentProjectTime();
   S.sdrag=true; els.scrub.setPointerCapture(e.pointerId);
   els.sknob.classList.add('on'); handleScrub(e); e.preventDefault();
 }, {passive:false});
 els.scrub.addEventListener('pointermove', e=>{ if(S.sdrag){ handleScrub(e); e.preventDefault(); } }, {passive:false});
 ['pointerup','pointercancel'].forEach(ev=>els.scrub.addEventListener(ev,()=>{
   const resume=S.scrubWasPlaying;
+  const target=S.scrubTargetTime;
   S.sdrag=false; S.scrubWasPlaying=false; els.sknob.classList.remove('on');
-  if(resume&&els.video.paused&&!S.reversePlaying&&!S.exporting) startCurrentPlayback();
+  seekProjectTime(target,{keepPlaying:resume});
 }));
 function handleScrub(e){
   const r=els.scrub.querySelector('.sin').getBoundingClientRect();
   const f=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
   const projectTime=f*projectDuration();
+  S.scrubTargetTime=projectTime;
   setScrubPosition(f,projectTime);
-  seekProjectTime(projectTime,{keepPlaying:S.scrubWasPlaying});
+  drawCachedScrubPreview(projectTime);
 }
 function setScrubPosition(f,time){
   const pct=Math.min(100,Math.max(0,f*100));
@@ -1726,7 +1763,6 @@ function syncScrub(){
 }
 function seekProjectTime(time,opts={}){
   const keepPlaying=!!opts.keepPlaying;
-  const wasReverse=S.reversePlaying;
   if(!keepPlaying){
     S.reversePlaying=false; els.video.pause(); setPlaybackUI(false);
   }
@@ -1734,7 +1770,7 @@ function seekProjectTime(time,opts={}){
   if(!located) return;
   if(located.index===S.activeClip){
     els.video.currentTime=located.sourceTime;
-    if(keepPlaying&&wasReverse){ S.reversePlaying=true; S.reverseLast=performance.now(); setPlaybackUI(true); }
+    if(keepPlaying) startCurrentPlayback();
     syncScrub();
   }else{
     activateClip(located.index,{seek:located.sourceTime,skipStrip:true}).then(()=>{
@@ -1826,16 +1862,21 @@ function drawThumbFrame(ctx,v,source,x,w,h){
 async function generateStrip(){
   if(!S.clips.length||S.exporting) return;
   const token=++S.thumbToken;
-  const N=Math.min(128,Math.max(16,Math.ceil(16*S.timelineZoom))), H=92, W=112;
+  const total=projectDuration();
+  const N=Math.min(128,Math.max(24,Math.ceil(24*S.timelineZoom),Math.ceil(total/2))), H=92, W=112;
   const c=els.strip; c.width=W*N; c.height=H;
   const cx=c.getContext('2d'); cx.clearRect(0,0,c.width,c.height);
+  const frames=new Array(N), frameTimes=new Array(N);
+  S.stripFrames=frames;
+  S.stripFrameTimes=frameTimes;
   const v=document.createElement('video');
   v.preload='auto'; v.muted=true; v.playsInline=true;
   let loadedSourceId=null;
   try{
     for(let i=0;i<N;i++){
       if(token!==S.thumbToken) break;
-      const located=locateProjectTime((i+0.5)/N*projectDuration());
+      const projectTime=(i+0.5)/N*total;
+      const located=locateProjectTime(projectTime);
       const source=located&&sourceById(located.clip.sourceId);
       if(!source) continue;
       if(loadedSourceId!==source.id){
@@ -1846,11 +1887,30 @@ async function generateStrip(){
         });
         loadedSourceId=source.id;
       }
-      await seekTo(v,located.sourceTime);
-      drawThumbFrame(cx,v,source,i*W,W,H);
+      await seekFrameTo(v,located.sourceTime);
+      if(token!==S.thumbToken) break;
+      const tile=document.createElement('canvas');
+      tile.width=W; tile.height=H;
+      drawThumbFrame(tile.getContext('2d'),v,source,0,W,H);
+      cx.drawImage(tile,i*W,0);
+      frames[i]=tile;
+      frameTimes[i]=projectTime;
     }
   }catch(e){}
   v.removeAttribute('src'); v.load();
+  if(token===S.thumbToken){
+    S.stripFrames=frames;
+    S.stripFrameTimes=frameTimes;
+  }
+}
+function seekFrameTo(v,t){
+  return seekTo(v,t).then(()=>new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{ if(done) return; done=true; resolve(); };
+    if(typeof v.requestVideoFrameCallback==='function') v.requestVideoFrameCallback(finish);
+    else finish();
+    setTimeout(finish,500);
+  }));
 }
 function seekTo(v,t){
   if(Math.abs((v.currentTime||0)-t)<0.002&&v.readyState>=2) return Promise.resolve();
@@ -2040,20 +2100,20 @@ function onRecStop(){
   S.blobFile=new File([blob], S.projectName+'_proyecto.'+extFor(type), {type});
 
   els.outVideo.src=S.blobUrl;
-  els.dl.href=S.blobUrl; els.dl.download=S.blobFile.name;
-  setTimeout(()=>{ try{ els.dl.click(); }catch(e){} },0);
+  const download=document.createElement('a');
+  download.href=S.blobUrl;
+  download.download=S.blobFile.name;
+  download.style.display='none';
+  document.body.appendChild(download);
+  setTimeout(()=>{
+    try{ download.click(); }
+    finally{ download.remove(); }
+  },0);
   const o=ex&&ex.output?ex.output:outSize();
   els.outMeta.textContent=o.w+'×'+o.h+' · '+(blob.size/1048576).toFixed(1)+' MB · '+extFor(type).toUpperCase();
   els.result.classList.remove('hidden');
   els.result.scrollIntoView({behavior:'smooth',block:'center'});
 }
-els.share.addEventListener('click', async ()=>{
-  if(!S.blobFile) return;
-  try{
-    if(navigator.canShare&&navigator.canShare({files:[S.blobFile]})) await navigator.share({files:[S.blobFile],title:S.blobFile.name});
-    else alert('Compartir no está disponible aquí. Usa el botón Descargar.');
-  }catch(e){}
-});
 
 function syncAll(){ syncCrop(); syncBadge(); syncScrub(); needsDraw=true; }
 window.addEventListener('resize', ()=>{
