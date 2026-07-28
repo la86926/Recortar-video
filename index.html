@@ -10,14 +10,6 @@
 <link rel="apple-touch-icon" href="edicion-de-video.png">
 <title>Recorte — editor de video</title>
 <style>
-/* ==================== SISTEMA DE COLOR ====================
-   Un solo tono: verde salvia #8AA07C.
-   · brand   = tu verde exacto. Rellenos sin texto encima.
-   · action  = verde profundo. Botones que llevan texto blanco.
-   · ink     = verde muy oscuro. Texto verde sobre blanco.
-   Los neutros llevan una gota del mismo verde para que el
-   blanco no pelee de temperatura con el acento.
-   ========================================================== */
 :root{
   --bg:#F5F5F7;
   --surface:#FFFFFF;
@@ -77,7 +69,6 @@ html[data-theme="dark"]{
   --shadow-sm:0 1px 3px rgba(0,0,0,.55);
 }
 
-/* ==================== BASE Y BLOQUEO DE MOVIMIENTO ==================== */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{
   margin:0;padding:0;height:100%;
@@ -107,7 +98,6 @@ button,select,a.btn,label{touch-action:manipulation}
 }
 .wrap{max-width:600px;margin:0 auto;padding:0 16px}
 
-/* ==================== CABECERA ==================== */
 header{
   flex:0 0 auto;
   background:var(--surface);
@@ -127,7 +117,6 @@ header{
 .brand h1 em{font-style:italic;color:var(--ink)}
 .brand span{font-size:10.5px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
 
-/* ==================== SEGMENTADO ==================== */
 .seg{display:inline-flex;background:var(--surface-2);border-radius:10px;padding:2px;gap:2px}
 .seg button{
   appearance:none;border:0;background:transparent;color:var(--text-2);
@@ -137,7 +126,6 @@ header{
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)}
 html[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--surface-3)}
 
-/* ==================== TARJETAS ==================== */
 .card{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
   padding:16px;margin-top:14px;box-shadow:var(--shadow);
@@ -153,7 +141,6 @@ html[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--surfac
 .card > h2 .r{margin-left:auto;font:600 11.5px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-3)}
 .hint{font-size:12.5px;color:var(--text-3);margin:-6px 0 12px;line-height:1.45}
 
-/* ==================== BOTONES ==================== */
 .btn{
   appearance:none;font:inherit;font-weight:590;cursor:pointer;
   border-radius:var(--r-md);border:1px solid transparent;
@@ -176,7 +163,6 @@ html[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--surfac
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .row.tight{gap:6px}
 
-/* ==================== CHIPS ==================== */
 .chips{display:flex;gap:7px;overflow-x:auto;padding:2px 16px 10px;margin:0 -16px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{
@@ -189,7 +175,6 @@ html[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--surfac
 .chip[aria-pressed="true"]{background:var(--brand);color:#12190C;font-weight:640}
 html[data-theme="dark"] .chip[aria-pressed="true"]{color:#0E1508}
 
-/* ==================== CARGA ==================== */
 .drop{
   border:1.5px dashed var(--brand-line);border-radius:var(--r-lg);
   min-height:286px;padding:38px 20px;text-align:center;background:var(--surface);margin-top:14px;
@@ -237,7 +222,6 @@ html[data-theme="dark"] .file-drop-overlay{background:rgba(9,10,9,.88)}
 }
 body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
 
-/* ==================== ESCENARIO / RECORTE ==================== */
 .stage{
   position:relative;width:100%;background:#000;border-radius:var(--r-md);
   overflow:hidden;touch-action:none;aspect-ratio:16/9;
@@ -254,7 +238,6 @@ body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
 .grid3 i{position:absolute;background:rgba(255,255,255,.6)}
 .grid3 i.v{top:0;bottom:0;width:1px}
 .grid3 i.h{left:0;right:0;height:1px}
-/* Los tiradores son SOLO visuales. El área táctil se calcula por zonas en JS. */
 .hnd{position:absolute;pointer-events:none;background:#fff;border-radius:3px;
   box-shadow:0 0 0 1px rgba(0,0,0,.4);transition:transform .12s ease,background .12s ease}
 .hnd.c{width:16px;height:16px;border-radius:5px}
@@ -270,7 +253,6 @@ body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
   padding:6px 8px;border-radius:7px;backdrop-filter:blur(6px);
 }
 
-/* ==================== SALIDA EN VIVO ==================== */
 .outwrap{display:flex;justify-content:center;background:var(--surface-2);border-radius:var(--r-md);padding:12px}
 #out{max-width:100%;max-height:190px;border-radius:8px;display:block;background:#000}
 .frame-save{margin-top:10px;background:var(--surface-2)}
@@ -279,7 +261,6 @@ body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
   stroke-linecap:round;stroke-linejoin:round
 }
 
-/* ==================== LÍNEA DE TIEMPO ==================== */
 .project-strip{
   position:relative;height:92px;border-radius:14px;overflow:hidden;
   background:var(--surface-3);border:1px solid var(--line);isolation:isolate;
@@ -322,7 +303,6 @@ html[data-theme="dark"] .sknob{
 .scrubrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:2px}
 .scrubrow span{font:600 12px var(--mono);color:var(--text-3)}
 
-/* ==================== CAMPOS DE TIEMPO ==================== */
 .times{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .tf{background:var(--surface-2);border-radius:var(--r-md);padding:11px}
 .tf label{display:block;font-size:10.5px;font-weight:680;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
@@ -341,7 +321,6 @@ html[data-theme="dark"] .sknob{
   background:var(--brand-soft);border-radius:var(--r-sm);padding:10px}
 .dur b{color:var(--ink);font-weight:700}
 
-/* ==================== CAMPOS ==================== */
 .field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
 .field:first-of-type{border-top:0;padding-top:0}
 .field label{font-size:14.5px;font-weight:500}
@@ -366,7 +345,6 @@ input[type=range]::-webkit-slider-thumb{appearance:none;width:26px;height:26px;b
 input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:var(--surface-3)}
 input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.28)}
 
-/* ==================== TRANSPORTE ==================== */
 .transport{display:flex;align-items:center;gap:10px;margin-top:12px}
 .transport .btn{flex:1}
 .tc{font:600 13px var(--mono);color:var(--text-2);flex:0 0 auto;min-width:98px;text-align:right}
@@ -379,7 +357,6 @@ html[data-theme="dark"] #playBtn{
   color:#10150D;box-shadow:0 8px 22px rgba(0,0,0,.28);
 }
 
-/* ==================== BARRA DE ACCIÓN ==================== */
 .bar{
   position:fixed;z-index:40;left:0;right:0;bottom:0;
   background:var(--surface);border-top:1px solid var(--line);
@@ -392,12 +369,11 @@ body.editor-open #scroll{padding-bottom:calc(96px + env(safe-area-inset-bottom))
 .prog i{display:block;height:100%;width:0;background:var(--action-grad);border-radius:4px;transition:width .2s linear}
 .st{font-size:12.5px;color:var(--text-2);text-align:center;margin-bottom:8px;display:none}
 
-#result video{width:100%;border-radius:var(--r-md);background:#000;display:block}
+#result video,#result img{width:100%;border-radius:var(--r-md);background:#000;display:block}
 .meta{font:500 12.5px var(--mono);color:var(--text-3);margin:10px 0 12px;text-align:center}
 .hidden{display:none !important}
 .warn{background:var(--brand-soft);border-radius:var(--r-md);padding:12px 13px;font-size:12.5px;color:var(--text-2);line-height:1.5;margin-top:12px}
 
-/* Los fragmentos comparten la misma tira de fotogramas. */
 .timeline{position:absolute;z-index:3;inset:0}
 .timeline-segment{
   position:absolute;top:0;bottom:0;appearance:none;border:0;border-radius:0;
@@ -543,7 +519,6 @@ html[data-theme="dark"] #timeInput{box-shadow:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
 
-/* ==================== APPLE PREMIUM REFRESH ==================== */
 :root{
   --bg:#F5F5F7;
   --surface:rgba(255,255,255,.94);
@@ -681,7 +656,7 @@ html[data-theme="dark"] .seg button[aria-pressed="true"]{
 }
 .stage{border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .outwrap{border-radius:17px;padding:14px}
-#out,#result video{border-radius:12px}
+#out,#result video,#result img{border-radius:12px}
 .chip{min-height:42px;padding:9px 15px;border-color:var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.45)}
 .chip[aria-pressed="true"]{box-shadow:0 4px 12px rgba(82,106,71,.18)}
 .tf,select,.num{border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.45)}
@@ -765,7 +740,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       </div>
       <p class="drop-title">Arrastra y suelta un video o GIF aquí</p>
     </div>
-    <input type="file" id="file" accept="video/*,image/gif,.gif" hidden>
+    <input type="file" id="file" accept="video/*,image/gif,.gif,.mp4,.m4v,.mov,.webm,.avi,.mkv,.wmv,.flv,.mpeg,.mpg,.mpe,.3gp,.3g2,.ogv,.ogg,.ts,.mts,.m2ts,.vob,.asf,.rm,.rmvb" hidden>
   </section>
 
   <div id="editor" class="hidden">
@@ -836,7 +811,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       </div>
 
       <div class="edit-toast" id="editNotice" aria-live="polite"></div>
-      <input type="file" id="appendFile" accept="video/*,image/gif,.gif" hidden>
+      <input type="file" id="appendFile" accept="video/*,image/gif,.gif,.mp4,.m4v,.mov,.webm,.avi,.mkv,.wmv,.flv,.mpeg,.mpg,.mpe,.3gp,.3g2,.ogv,.ogg,.ts,.mts,.m2ts,.vob,.asf,.rm,.rmvb" hidden>
       <div class="editor-toolbar" role="toolbar" aria-label="Herramientas de edición">
         <button class="icon-btn" id="addVideo" type="button" aria-label="Añadir video" title="Añadir video">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 9 4-2v10l-4-2M7 12h6M10 9v6"/></svg>
@@ -922,6 +897,7 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
     <section class="card hidden" id="result">
       <h2>Listo</h2>
       <video id="outVideo" controls playsinline></video>
+      <img id="outImage" class="hidden" alt="">
       <p class="meta" id="outMeta"></p>
     </section>
 
@@ -965,7 +941,7 @@ const els = {
   ratios:$('#ratios'), cropInfo:$('#cropInfo'), keepAudio:$('#keepAudio'),
   bar:$('#bar'), prog:$('#prog'), st:$('#st'),
   exportBtn:$('#exportBtn'), cancelBtn:$('#cancelBtn'), result:$('#result'),
-  outVideo:$('#outVideo'), outMeta:$('#outMeta'),
+  outVideo:$('#outVideo'), outImage:$('#outImage'), outMeta:$('#outMeta'),
   editor:$('#editor'), dropCard:$('#dropCard'), customRow:$('#customRow'), cw:$('#cw'), ch:$('#ch'),
   appendFile:$('#appendFile'), addVideo:$('#addVideo'), timeline:$('#timeline'), dropOverlay:$('#dropOverlay'),
   splitClip:$('#splitClip'), deleteClip:$('#deleteClip'), projectDur:$('#projectDur'),
@@ -987,7 +963,8 @@ const S = {
   drag:null, stageTap:null, sdrag:false, advancing:false,
   sources:[], clips:[], activeClip:-1, sourceId:null, serial:0, thumbToken:0, activationToken:0,
   exportState:null, exportGain:null, exportMonitorDisconnected:false, exportElementVolume:null,
-  sourceCapture:null, projectName:'video', gifImporting:false,
+  sourceCapture:null, projectName:'video', projectFormat:'mp4', gifImporting:false,
+  exportKind:null, gifExportCancelled:false,
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
   scrubTargetTime:0, liveScrubBusy:false, liveScrubQueuedTime:null, liveScrubGeneration:0,
@@ -996,16 +973,12 @@ const S = {
   floatPointers:new Map(), floatGesture:null
 };
 
-/* ======== BLOQUEO GLOBAL DE ARRASTRE ========
-   Mientras haya un gesto activo sobre un control, se cancela
-   cualquier desplazamiento del navegador. */
 document.addEventListener('touchmove', e=>{
   if(S.drag || S.sdrag || S.pinch || S.trimDrag || S.floatDrag || S.floatGesture) e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('dragstart', e=>e.preventDefault());
 
-/* ======== TEMA ======== */
 let themeMode = 'auto';
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
 function applyTheme(){
@@ -1024,7 +997,6 @@ document.querySelectorAll('[data-theme-btn]').forEach(b=>{
 mq.addEventListener('change',()=>{ if(themeMode==='auto') applyTheme(); });
 applyTheme();
 
-/* ======== TIEMPO ======== */
 function fmt(t){
   if(!isFinite(t)||t<0) t=0;
   const m=Math.floor(t/60), s=Math.floor(t%60);
@@ -1041,7 +1013,6 @@ function parseTime(str){
 }
 function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
-/* ======== CARGA ======== */
 els.dropCard.addEventListener('click',e=>{
   if(e.target===els.file) return;
   els.file.value=''; els.file.click();
@@ -1119,6 +1090,23 @@ function ensureGifDecoder(){
     throw error;
   });
   return gifDecoderLoading;
+}
+let gifEncoderLoading=null;
+function ensureGifEncoder(){
+  if(window.GIFENC) return Promise.resolve(window.GIFENC);
+  if(gifEncoderLoading) return gifEncoderLoading;
+  gifEncoderLoading=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='gifenc.min.js';
+    script.async=true;
+    script.onload=()=>window.GIFENC?resolve(window.GIFENC):reject(new Error('El codificador GIF no se inició correctamente.'));
+    script.onerror=()=>reject(new Error('No se pudo cargar el codificador GIF.'));
+    document.head.appendChild(script);
+  }).catch(error=>{
+    gifEncoderLoading=null;
+    throw error;
+  });
+  return gifEncoderLoading;
 }
 async function convertGifToEditableVideo(file){
   await ensureGifDecoder();
@@ -1216,7 +1204,8 @@ async function inspectFile(originalFile){
       const source={
         id:uid(),url,file:f,name:(originalFile.name||f.name||'video').replace(/\.[^.]+$/,''),
         duration,width:v.videoWidth,height:v.videoHeight,
-        bitrate:Math.max(700000,Math.round((f.size*8)/duration)),fps:30
+        bitrate:Math.max(700000,Math.round((f.size*8)/duration)),fps:30,
+        originalFormat:isGifFile(originalFile)?'gif':'video'
       };
       clean(); resolve(source);
     },{once:true});
@@ -1234,6 +1223,7 @@ async function loadFile(f){
     S.sources=[source];
     S.clips=[newClip(source.id,0,source.duration)];
     S.activeClip=-1; S.sourceId=null; S.projectName=source.name; S.name=source.name;
+    S.projectFormat=source.originalFormat==='gif'?'gif':'mp4';
     S.history=[]; S.redo=[]; S.reversePlaying=false; S.timelineZoom=1; S.timelinePointers.clear(); S.pinch=null;
     els.timelineContent.style.width='100%'; els.projectStrip.scrollLeft=0;
     S.rot=0; S.flipH=false; S.flipV=false;
@@ -1298,7 +1288,6 @@ els.video.addEventListener('error', ()=>{
 });
 requestAnimationFrame(loop);
 
-/* ======== PROYECTO Y SEGMENTOS ======== */
 function clipDuration(clip){ return Math.max(0,clip.end-clip.start); }
 function projectDuration(){ return S.clips.reduce((n,c)=>n+clipDuration(c),0); }
 function projectOffset(index){
@@ -1620,7 +1609,6 @@ els.fadeDialog.addEventListener('close',()=>{
   showEditNotice('Fundidos guardados.','ok'); needsDraw=true;
 });
 
-/* ======== PROPORCIONES ======== */
 const PRESETS=[
   {k:'free',label:'Libre',r:null},{k:'orig',label:'Original',r:'orig'},
   {k:'1:1',label:'1:1',r:1},{k:'4:5',label:'4:5',r:4/5},{k:'9:16',label:'9:16',r:9/16},
@@ -1673,9 +1661,6 @@ $('#rotR').addEventListener('click',()=>{ S.rot=(S.rot+90)%360; refreshVisualEdi
 $('#flipH').addEventListener('click',()=>{ S.flipH=!S.flipH; refreshVisualEdits(); });
 $('#flipV').addEventListener('click',()=>{ S.flipV=!S.flipV; refreshVisualEdits(); });
 
-/* ======== ZONAS TÁCTILES DEL RECORTE ========
-   Todo el interior mueve el encuadre. Solo una franja estrecha
-   alrededor del borde activa los tiradores, sin superponerse. */
 const OUT_GRAB = 28;
 const EDGE_GRAB = 24;
 function hitZone(clientX, clientY){
@@ -1792,7 +1777,6 @@ function syncCrop(){
   els.grip.style.display = (c.w*r.width>110 && c.h*r.height>110)?'grid':'none';
 }
 
-/* ======== TAMAÑO DE SALIDA ======== */
 function outSize(){
   const sw=S.crop.w*S.VW, sh=S.crop.h*S.VH;
   let w=Math.round(sw), h=Math.round(sh);
@@ -1824,7 +1808,6 @@ function syncBadge(){
   }
 }
 
-/* ======== DIBUJO ======== */
 function renderClip(){
   return S.exporting&&S.exportState?S.exportState.plan[S.exportState.index]:S.clips[S.activeClip];
 }
@@ -2150,7 +2133,6 @@ els.floatingPreview.addEventListener('wheel',e=>{
   e.preventDefault();
 },{passive:false});
 
-/* ======== AUDIO ======== */
 function ensureAudio(){
   if(S.audio||S.audioBroken){ if(S.audio&&S.audio.ctx.state==='suspended') S.audio.ctx.resume(); return S.audio; }
   try{
@@ -2196,7 +2178,6 @@ function clearExportAudioRouting(){
   restorePreviewAfterExport();
 }
 
-/* ======== DESLIZADOR DEL PROYECTO ======== */
 function beginProjectScrub(element,e){
   if(!projectDuration()) return;
   S.liveScrubGeneration++;
@@ -2359,7 +2340,6 @@ els.projectPlayhead.addEventListener('pointermove',e=>{
   finishProjectScrub();
 }));
 
-/* ======== ZOOM TEMPORAL CON DOS DEDOS ======== */
 function pointerDistance(points){
   return Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
 }
@@ -2421,7 +2401,6 @@ els.projectStrip.addEventListener('wheel',e=>{
   scheduleStripRender();
 },{passive:false});
 
-/* ======== MINIATURAS ======== */
 function drawThumbFrame(ctx,v,source,x,w,h){
   const sx=S.crop.x*source.width, sy=S.crop.y*source.height;
   const sw=S.crop.w*source.width, sh=S.crop.h*source.height;
@@ -2493,23 +2472,161 @@ function seekTo(v,t){
   });
 }
 
-/* ======== EXPORTAR ======== */
 function pickMime(){
-  const cands=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a','video/mp4',
-               'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+  const cands=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a','video/mp4'];
   if(!window.MediaRecorder) return null;
   for(const c of cands){ try{ if(MediaRecorder.isTypeSupported(c)) return c; }catch(e){} }
-  return '';
+  return null;
 }
-function extFor(m){ return (m&&m.indexOf('mp4')>=0)?'mp4':'webm'; }
+function extFor(){ return 'mp4'; }
+function locatePlanTime(plan,time){
+  const total=plan.reduce((sum,clip)=>sum+clipDuration(clip),0);
+  let target=Math.min(Math.max(0,time),Math.max(0,total-0.001));
+  let offset=0;
+  for(let index=0;index<plan.length;index++){
+    const clip=plan[index],length=clipDuration(clip);
+    if(target<=offset+length||index===plan.length-1){
+      const local=Math.max(0,Math.min(length,target-offset));
+      return {index,clip,sourceTime:clip.reversed?clip.end-local:clip.start+local};
+    }
+    offset+=length;
+  }
+  return null;
+}
+function setExportResult(blob,type,extension,ex){
+  if(S.blobUrl) URL.revokeObjectURL(S.blobUrl);
+  S.blobUrl=URL.createObjectURL(blob);
+  S.blobFile=new File([blob],S.projectName+'_proyecto.'+extension,{type});
+  if(extension==='gif'){
+    els.outVideo.pause();
+    els.outVideo.removeAttribute('src');
+    els.outVideo.classList.add('hidden');
+    els.outImage.src=S.blobUrl;
+    els.outImage.classList.remove('hidden');
+  }else{
+    els.outImage.removeAttribute('src');
+    els.outImage.classList.add('hidden');
+    els.outVideo.src=S.blobUrl;
+    els.outVideo.classList.remove('hidden');
+  }
+  const download=document.createElement('a');
+  download.href=S.blobUrl;
+  download.download=S.blobFile.name;
+  download.style.display='none';
+  document.body.appendChild(download);
+  setTimeout(()=>{
+    try{ download.click(); }
+    finally{ download.remove(); }
+  },0);
+  const o=ex&&ex.output?ex.output:outSize();
+  els.outMeta.textContent=o.w+'×'+o.h+' · '+(blob.size/1048576).toFixed(1)+' MB · '+extension.toUpperCase();
+  els.result.classList.remove('hidden');
+}
 els.exportBtn.addEventListener('click', startExport);
-els.cancelBtn.addEventListener('click',()=>{ if(S.exporting) finishExport(true); });
+els.cancelBtn.addEventListener('click',()=>{
+  if(!S.exporting) return;
+  if(S.exportKind==='gif') S.gifExportCancelled=true;
+  else finishExport(true);
+});
+
+async function startGifExport(){
+  if(S.exporting||!S.dur||!S.clips.length) return;
+  const restore={index:S.activeClip,time:els.video.currentTime};
+  const plan=S.clips.map(clip=>({...clip}));
+  const total=plan.reduce((sum,clip)=>sum+clipDuration(clip),0);
+  const usedSources=plan.map(clip=>sourceById(clip.sourceId)).filter(Boolean);
+  const output=projectExportSize(usedSources);
+  const fps=Math.max(10,Math.min(20,Math.round(Math.max(...usedSources.map(source=>source.fps||15),15))));
+  const frameCount=Math.max(1,Math.ceil(total*fps));
+  const canvas=document.createElement('canvas');
+  canvas.width=output.w;
+  canvas.height=output.h;
+  const ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high';
+  let encoder;
+  let loadedSourceId=null;
+  S.exporting=true;
+  S.exportKind='gif';
+  S.gifExportCancelled=false;
+  S.activationToken++;
+  S.exportState={plan,index:0,total,output,restore,ctx};
+  els.video.pause();
+  els.exportBtn.disabled=true;
+  els.saveFrame.disabled=true;
+  els.exportBtn.textContent='Exportando…';
+  els.cancelBtn.classList.remove('hidden');
+  els.prog.style.display='block';
+  els.st.style.display='block';
+  els.result.classList.add('hidden');
+  try{
+    const api=await ensureGifEncoder();
+    encoder=api.GIFEncoder();
+    for(let frameIndex=0;frameIndex<frameCount;frameIndex++){
+      if(S.gifExportCancelled) throw new Error('cancelled');
+      const time=Math.min(Math.max(0,total-0.001),frameIndex/fps);
+      const located=locatePlanTime(plan,time);
+      const source=located&&sourceById(located.clip.sourceId);
+      if(!located||!source) throw new Error('Segmento no disponible');
+      S.exportState.index=located.index;
+      if(loadedSourceId!==source.id){
+        await setVideoSource(source.url);
+        loadedSourceId=source.id;
+      }
+      S.sourceId=source.id;
+      S.url=source.url;
+      S.VW=source.width;
+      S.VH=source.height;
+      S.dur=source.duration;
+      S.start=located.clip.start;
+      S.end=located.clip.end;
+      await seekTo(els.video,located.sourceTime);
+      drawComposite(ctx,output.w,output.h);
+      const rgba=ctx.getImageData(0,0,output.w,output.h).data;
+      const palette=api.quantize(rgba,256);
+      const indexed=api.applyPalette(rgba,palette);
+      encoder.writeFrame(indexed,output.w,output.h,{
+        palette,
+        delay:Math.max(20,Math.round(1000/fps)),
+        repeat:frameIndex===0?0:undefined
+      });
+      const progress=(frameIndex+1)/frameCount;
+      els.prog.firstElementChild.style.width=(progress*100).toFixed(1)+'%';
+      els.st.textContent=Math.round(progress*100)+'%';
+      if(frameIndex%2===1) await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    encoder.finish();
+    const bytes=encoder.bytes();
+    const blob=new Blob([bytes],{type:'image/gif'});
+    setExportResult(blob,'image/gif','gif',S.exportState);
+  }catch(error){
+    if(error.message!=='cancelled'){
+      console.error(error);
+      alert('No se pudo exportar el GIF en este navegador.');
+    }
+  }finally{
+    const ex=S.exportState;
+    S.exporting=false;
+    S.exportKind=null;
+    S.gifExportCancelled=false;
+    S.exportState=null;
+    els.exportBtn.disabled=false;
+    els.saveFrame.disabled=false;
+    els.exportBtn.textContent='Exportar proyecto';
+    els.cancelBtn.classList.add('hidden');
+    els.prog.style.display='none';
+    els.st.style.display='none';
+    els.prog.firstElementChild.style.width='0%';
+    if(ex&&ex.restore) await activateClip(ex.restore.index,{seek:ex.restore.time,skipStrip:true});
+  }
+}
 
 async function startExport(){
   if(S.exporting||!S.dur||!S.clips.length) return;
+  if(S.projectFormat==='gif'){ await startGifExport(); return; }
   if(!window.MediaRecorder){ alert('Este navegador no puede grabar video. Prueba con Safari o Chrome actualizados.'); return; }
   const mime=pickMime();
-  if(mime===null){ alert('MediaRecorder no está disponible aquí.'); return; }
+  if(mime===null){ alert('Este navegador no permite exportar MP4.'); return; }
 
   const usedSources=S.clips.map(c=>sourceById(c.sourceId)).filter(Boolean);
   const o=projectExportSize(usedSources);
@@ -2537,11 +2654,12 @@ async function startExport(){
   };
   S.activationToken++;
   S.exporting=true;
+  S.exportKind='mp4';
   v.playbackRate=1; v.pause();
 
   try{ await prepareExportClip(0); }
   catch(e){
-    S.exporting=false; S.exportState=null;
+    S.exporting=false; S.exportKind=null; S.exportState=null;
     alert('No se pudo preparar uno de los fragmentos para exportarlo.');
     return;
   }
@@ -2572,7 +2690,7 @@ async function startExport(){
   S.dest=dest;
   audioAdded=stream.getAudioTracks().length>0;
   if(els.keepAudio.checked&&!audioAdded){
-    const ex=S.exportState; S.exporting=false; S.exportState=null;
+    const ex=S.exportState; S.exporting=false; S.exportKind=null; S.exportState=null;
     clearExportAudioRouting();
     if(ex) activateClip(ex.restore.index,{seek:ex.restore.time});
     alert('No se pudo preparar la pista de audio en este navegador. No se exportó un video silencioso.');
@@ -2583,21 +2701,18 @@ async function startExport(){
   S.chunks=[];
   let rec;
   const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};
-  if(mime) recorderOptions.mimeType=mime;
+  recorderOptions.mimeType=mime;
   try{ rec=new MediaRecorder(stream,recorderOptions); }
   catch(e){
-    try{ rec=new MediaRecorder(stream,{videoBitsPerSecond:bitrate}); }
+    try{ rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:bitrate}); }
     catch(e2){
-      try{ rec=new MediaRecorder(stream); }
-      catch(e3){
-        const ex=S.exportState; S.exporting=false; S.exportState=null;
-        clearExportAudioRouting();
-        if(ex) activateClip(ex.restore.index,{seek:ex.restore.time});
-        alert('No se pudo iniciar la grabación en este navegador.'); return;
-      }
+      const ex=S.exportState; S.exporting=false; S.exportKind=null; S.exportState=null;
+      clearExportAudioRouting();
+      if(ex) activateClip(ex.restore.index,{seek:ex.restore.time});
+      alert('No se pudo iniciar la exportación MP4 en este navegador.'); return;
     }
   }
-  S.rec=rec; S.mime=rec.mimeType||mime||'video/webm';
+  S.rec=rec; S.mime=rec.mimeType||mime;
   rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size) S.chunks.push(ev.data); };
   rec.onstop=onRecStop;
 
@@ -2665,6 +2780,7 @@ function finishExport(cancelled){
 function onRecStop(){
   const ex=S.exportState;
   S.exportState=null;
+  S.exportKind=null;
   clearExportAudioRouting();
   if(S.lock){ try{ S.lock.release(); }catch(e){} S.lock=null; }
   els.exportBtn.disabled=false; els.saveFrame.disabled=false; els.exportBtn.textContent='Exportar proyecto';
@@ -2676,25 +2792,9 @@ function onRecStop(){
   if(S.cancelled){ S.chunks=[]; S.cancelled=false; return; }
   if(!S.chunks.length){ alert('No se grabó nada. Intenta de nuevo con un proyecto un poco más largo.'); return; }
 
-  const type=S.mime.split(';')[0];
+  const type='video/mp4';
   const blob=new Blob(S.chunks,{type}); S.chunks=[];
-  if(S.blobUrl) URL.revokeObjectURL(S.blobUrl);
-  S.blobUrl=URL.createObjectURL(blob);
-  S.blobFile=new File([blob], S.projectName+'_proyecto.'+extFor(type), {type});
-
-  els.outVideo.src=S.blobUrl;
-  const download=document.createElement('a');
-  download.href=S.blobUrl;
-  download.download=S.blobFile.name;
-  download.style.display='none';
-  document.body.appendChild(download);
-  setTimeout(()=>{
-    try{ download.click(); }
-    finally{ download.remove(); }
-  },0);
-  const o=ex&&ex.output?ex.output:outSize();
-  els.outMeta.textContent=o.w+'×'+o.h+' · '+(blob.size/1048576).toFixed(1)+' MB · '+extFor(type).toUpperCase();
-  els.result.classList.remove('hidden');
+  setExportResult(blob,type,'mp4',ex);
 }
 
 function syncAll(){ syncCrop(); syncBadge(); syncScrub(); needsDraw=true; }
@@ -2707,7 +2807,7 @@ function isVideoFile(file){
   return !!file&&(
     String(file.type||'').startsWith('video/')||
     isGifFile(file)||
-    /\.(mp4|m4v|mov|webm|ogv|avi|mkv|3gp|mpeg|mpg)$/i.test(String(file.name||''))
+    /\.(mp4|m4v|mov|webm|avi|mkv|wmv|flv|mpeg|mpg|mpe|3gp|3g2|ogv|ogg|ts|mts|m2ts|vob|asf|rm|rmvb)$/i.test(String(file.name||''))
   );
 }
 let fileDragDepth=0;
