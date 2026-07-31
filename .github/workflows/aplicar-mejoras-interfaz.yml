@@ -1,0 +1,181 @@
+name: Aplicar mejoras de interfaz
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/aplicar-mejoras-interfaz.yml
+
+permissions:
+  contents: write
+
+jobs:
+  aplicar-cambios:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Modificar interfaz
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: se esperaba 1 coincidencia y se encontraron {count}')
+              return source.replace(old, new, 1)
+
+          old_lock_button = '''        <button class="icon-btn" id="cropLock" type="button" aria-pressed="false" aria-label="Confirmar encuadre" title="Confirmar encuadre">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
+        </button>'''
+          new_lock_button = '''        <button class="icon-btn crop-lock-control" id="cropLock" type="button" aria-pressed="false" aria-label="Confirmar recorte" title="Confirmar recorte">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
+          <span class="crop-lock-label">Confirmar recorte</span>
+        </button>'''
+          text = replace_once(text, old_lock_button, new_lock_button, 'botón de bloqueo')
+
+          old_notice = '''function showEditNotice(message,type=''){
+  clearTimeout(S.toastTimer);
+  els.editNotice.textContent=message;
+  els.editNotice.className='edit-toast show'+(type?' '+type:'');
+  S.toastTimer=setTimeout(()=>{ els.editNotice.className='edit-toast'; },2600);
+}'''
+          new_notice = '''function showEditNotice(){
+  // Avisos flotantes desactivados para mantener la pantalla despejada.
+}'''
+          text = replace_once(text, old_notice, new_notice, 'avisos flotantes')
+
+          old_crop_lock = '''function setCropLocked(locked){
+  S.cropLocked=!!locked;
+  S.drag=null; S.stageTap=null; markHandle(null);
+  els.stage.classList.toggle('crop-locked',S.cropLocked);
+  els.cropLock.setAttribute('aria-pressed',String(S.cropLocked));
+  const label=S.cropLocked?'Editar encuadre':'Confirmar encuadre';
+  els.cropLock.setAttribute('aria-label',label);
+  els.cropLock.title=label;
+}'''
+          new_crop_lock = '''function setCropLocked(locked){
+  S.cropLocked=!!locked;
+  S.drag=null; S.stageTap=null; markHandle(null);
+  els.stage.classList.toggle('crop-locked',S.cropLocked);
+  els.cropLock.setAttribute('aria-pressed',String(S.cropLocked));
+  const label=S.cropLocked?'Editar recorte':'Confirmar recorte';
+  const visibleLabel=els.cropLock.querySelector('.crop-lock-label');
+  if(visibleLabel) visibleLabel.textContent=S.cropLocked?'Recorte bloqueado':'Confirmar recorte';
+  els.cropLock.setAttribute('aria-label',label);
+  els.cropLock.title=label;
+}'''
+          text = replace_once(text, old_crop_lock, new_crop_lock, 'estado del bloqueo')
+
+          css_anchor = '''@media (max-width:430px){'''
+          css_override = '''/* Mejoras solicitadas: eliminar visible, bloqueo claro y pantalla sin avisos flotantes */
+.edit-toast{display:none !important}
+.editor-toolbar .danger-tool{
+  background:#FFFFFF !important;
+  color:#E23D3D !important;
+  border-color:rgba(226,61,61,.24) !important;
+}
+html[data-theme="dark"] .editor-toolbar .danger-tool{
+  background:#252823 !important;
+  color:#FF6961 !important;
+  border-color:rgba(255,105,97,.28) !important;
+}
+.stage-toolbar{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 48px;
+  align-items:center;
+  gap:8px;
+}
+.stage-toolbar .chips{
+  grid-column:1/-1;
+  width:100%;
+  min-width:0;
+  margin:0;
+  padding:2px 3px 7px;
+}
+.stage-toolbar .crop-lock-control{
+  grid-column:1;
+  width:100%;
+  min-width:0;
+  min-height:46px;
+  padding:0 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  background:var(--brand-soft);
+  color:var(--ink);
+  border-color:var(--brand-line);
+  animation:crop-lock-attention 1.8s ease-in-out infinite;
+}
+.stage-toolbar .crop-lock-control svg{width:21px;height:21px;flex:0 0 auto}
+.stage-toolbar .crop-lock-label{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font:700 13.5px var(--sans);
+}
+.stage-toolbar #floatPreviewToggle{grid-column:2;width:48px}
+#cropLock[aria-pressed="true"]{
+  animation:none;
+  border-color:transparent;
+  background:var(--action);
+  color:#FFFFFF;
+  box-shadow:0 3px 10px rgba(31,191,91,.20);
+}
+html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
+  background:rgba(31,191,91,.14);
+  color:#8EE5AD;
+}
+@keyframes crop-lock-attention{
+  0%,100%{box-shadow:0 0 0 0 rgba(31,191,91,.08)}
+  50%{box-shadow:0 0 0 5px rgba(31,191,91,.16)}
+}
+
+'''
+          text = replace_once(text, css_anchor, css_override + css_anchor, 'estilos finales')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Comprobar JavaScript
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script>(.*?)</script>', text, flags=re.S)
+          if len(scripts) != 1:
+              raise SystemExit(f'Se esperaba un script principal y se encontraron {len(scripts)}')
+          Path('/tmp/app.js').write_text(scripts[0], encoding='utf-8')
+          required = [
+              'class="icon-btn crop-lock-control"',
+              'class="crop-lock-label"',
+              'function showEditNotice(){',
+              '.editor-toolbar .danger-tool',
+              '.edit-toast{display:none !important}'
+          ]
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f'Falta la comprobación: {marker}')
+          PY
+          node --check /tmp/app.js
+
+      - name: Publicar cambios y retirar automatización temporal
+        shell: bash
+        run: |
+          rm -f .github/workflows/aplicar-mejoras-interfaz.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html .github/workflows/aplicar-mejoras-interfaz.yml
+          git commit -m "Mejora controles y elimina avisos flotantes"
+          git push
