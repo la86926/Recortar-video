@@ -264,24 +264,27 @@ body.file-dragging .file-drop-overlay{opacity:1;visibility:visible}
 .project-strip{
   position:relative;height:92px;border-radius:14px;overflow:hidden;
   background:var(--surface-3);border:1px solid var(--line);isolation:isolate;
-  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:none;
+  overscroll-behavior:contain;user-select:none;-webkit-user-select:none;
 }
 .project-strip::-webkit-scrollbar{display:none}
-.timeline-content{position:relative;height:100%;min-width:100%;transform-origin:left center}
+.timeline-content{position:relative;height:100%;min-width:100%;transform-origin:left center;isolation:isolate}
 .timeline-content > canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.94}
 .project-playhead{
-  position:absolute;z-index:5;top:0;bottom:0;left:0;width:30px;margin-left:-15px;
+  position:absolute;z-index:100;top:0;bottom:0;
+  left:clamp(3px,var(--playhead-position,0%),calc(100% - 3px));width:30px;margin-left:-15px;
   background:transparent;pointer-events:auto;touch-action:none;cursor:ew-resize;
+  opacity:1 !important;visibility:visible !important;filter:none !important;isolation:isolate;
 }
 .project-playhead::before{
-  content:"";position:absolute;top:0;left:50%;width:12px;height:12px;
+  content:"";position:absolute;z-index:2;top:0;left:50%;width:14px;height:14px;
   transform:translate(-50%,-45%) rotate(45deg);border-radius:3px;background:#0A84FF;
-  box-shadow:-1px -1px 0 rgba(8,42,78,.48),0 0 10px rgba(10,132,255,.38);
+  box-shadow:0 0 0 1px rgba(255,255,255,.88),0 0 0 2px rgba(8,42,78,.74),0 0 12px rgba(10,132,255,.92);
 }
 .project-playhead::after{
-  content:"";position:absolute;top:0;bottom:0;left:50%;width:3px;
+  content:"";position:absolute;z-index:1;top:0;bottom:0;left:50%;width:4px;
   transform:translateX(-50%);background:#0A84FF;
-  box-shadow:0 0 0 1px rgba(8,42,78,.54),0 0 9px rgba(10,132,255,.58)
+  box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 2px rgba(8,42,78,.68),0 0 11px rgba(10,132,255,.9)
 }
 html[data-theme="dark"] .project-playhead::before,
 html[data-theme="dark"] .project-playhead::after{background:#64D2FF}
@@ -806,9 +809,9 @@ html[data-theme="dark"] .clip[aria-pressed="true"]{
       </div>
 
       <div class="time-stepper">
-        <button class="step-btn" id="stepBack" type="button" aria-label="Retroceder un segundo">−1s</button>
+        <button class="step-btn" id="stepBack" type="button" aria-label="Retroceder un fotograma" title="Retroceder un fotograma">−1f</button>
         <input id="timeInput" type="text" inputmode="decimal" value="00:00.00" aria-label="Segundo exacto">
-        <button class="step-btn" id="stepForward" type="button" aria-label="Avanzar un segundo">+1s</button>
+        <button class="step-btn" id="stepForward" type="button" aria-label="Avanzar un fotograma" title="Avanzar un fotograma">+1f</button>
       </div>
 
       <div class="edit-toast" id="editNotice" aria-live="polite"></div>
@@ -967,7 +970,7 @@ const S = {
   sourceCapture:null, projectName:'video', projectFormat:'mp4', gifImporting:false,
   exportKind:null, gifExportCancelled:false,
   history:[], redo:[], insertSide:'after', reversePlaying:false, reverseLast:0, toastTimer:null,
-  floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
+  floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), timelinePan:null, pinch:null, scrubWasPlaying:false,
   scrubTargetTime:0, liveScrubBusy:false, liveScrubQueuedTime:null, liveScrubGeneration:0,
   stripFrames:[], stripFrameTimes:[],
   stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null,
@@ -975,9 +978,9 @@ const S = {
 };
 
 document.addEventListener('touchmove', e=>{
-  if(S.drag || S.sdrag || S.pinch || S.floatDrag || S.floatGesture) e.preventDefault();
+  if(S.drag || S.sdrag || S.timelinePan || S.pinch || S.floatDrag || S.floatGesture) e.preventDefault();
 }, {passive:false});
-document.addEventListener('gesturestart', e=>e.preventDefault());
+['gesturestart','gesturechange','gestureend'].forEach(type=>document.addEventListener(type,e=>e.preventDefault()));
 document.addEventListener('dragstart', e=>e.preventDefault());
 
 let themeMode = 'auto';
@@ -1225,7 +1228,7 @@ async function loadFile(f){
     S.clips=[newClip(source.id,0,source.duration)];
     S.activeClip=-1; S.sourceId=null; S.projectName=source.name; S.name=source.name;
     S.projectFormat=source.originalFormat==='gif'?'gif':'mp4';
-    S.history=[]; S.redo=[]; S.reversePlaying=false; S.timelineZoom=1; S.timelinePointers.clear(); S.pinch=null;
+    S.history=[]; S.redo=[]; S.reversePlaying=false; S.timelineZoom=1; S.timelinePointers.clear(); S.timelinePan=null; S.pinch=null;
     els.timelineContent.style.width='100%'; els.projectStrip.scrollLeft=0;
     S.rot=0; S.flipH=false; S.flipV=false;
     S.crop={x:0,y:0,w:1,h:1}; S.ratio=null; S.ratioKey='free';
@@ -2183,7 +2186,7 @@ function setScrubPosition(f,time){
   const pct=Math.min(100,Math.max(0,f*100));
   els.sfill.style.width=pct+'%';
   els.sknob.style.left=pct+'%';
-  els.projectPlayhead.style.left=pct+'%';
+  els.projectPlayhead.style.setProperty('--playhead-position',pct+'%');
   els.scrubLab.textContent=fmt(time);
   if(document.activeElement!==els.timeInput) els.timeInput.value=fmt(time);
 }
@@ -2224,8 +2227,17 @@ function seekProjectTime(time,opts={}){
     });
   }
 }
-els.stepBack.addEventListener('click',()=>seekProjectTime(currentProjectTime()-1));
-els.stepForward.addEventListener('click',()=>seekProjectTime(currentProjectTime()+1));
+function currentFrameStep(){
+  const clip=S.clips[S.activeClip];
+  const source=clip&&sourceById(clip.sourceId);
+  const fps=Math.min(120,Math.max(1,Number(source&&source.fps)||30));
+  return 1/fps;
+}
+function stepProjectFrames(frames){
+  seekProjectTime(currentProjectTime()+frames*currentFrameStep());
+}
+els.stepBack.addEventListener('click',()=>stepProjectFrames(-1));
+els.stepForward.addEventListener('click',()=>stepProjectFrames(1));
 els.timeInput.addEventListener('change',()=>{
   const value=parseTime(els.timeInput.value);
   if(value===null){ els.timeInput.value=fmt(currentProjectTime()); return; }
@@ -2255,47 +2267,84 @@ function pointerDistance(points){
 function applyTimelineZoom(zoom,anchorRatio=.5,anchorX=null){
   const viewport=Math.max(1,els.projectStrip.clientWidth);
   const x=anchorX==null?viewport/2:anchorX;
-  S.timelineZoom=Math.min(8,Math.max(1,zoom));
+  S.timelineZoom=Math.min(32,Math.max(1,zoom));
   els.timelineContent.style.width=(S.timelineZoom*100)+'%';
   const full=viewport*S.timelineZoom;
   els.projectStrip.scrollLeft=Math.max(0,anchorRatio*full-x);
   if(S.timelineZoom===1) els.projectStrip.scrollLeft=0;
 }
 els.projectStrip.addEventListener('pointerdown',e=>{
+  if(e.pointerType!=='touch') return;
   S.timelinePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(S.timelinePointers.size===1){
+    S.timelinePan={pointerId:e.pointerId,startX:e.clientX,scrollLeft:els.projectStrip.scrollLeft,moved:false};
+  }
   if(S.timelinePointers.size===2){
+    S.timelinePan=null;
     for(const pointerId of S.timelinePointers.keys()){
       try{ els.projectStrip.setPointerCapture(pointerId); }catch(err){}
     }
-    const points=[...S.timelinePointers.values()];
+    const entries=[...S.timelinePointers.entries()].slice(0,2);
+    const points=entries.map(entry=>entry[1]);
     const rect=els.projectStrip.getBoundingClientRect();
     const midpoint=(points[0].x+points[1].x)/2-rect.left;
     const full=Math.max(1,els.projectStrip.clientWidth*S.timelineZoom);
     S.pinch={
+      pointerIds:entries.map(entry=>entry[0]),
       distance:Math.max(1,pointerDistance(points)),
       zoom:S.timelineZoom,
-      anchorRatio:(els.projectStrip.scrollLeft+midpoint)/full
+      anchorRatio:(els.projectStrip.scrollLeft+midpoint)/full,
+      moved:false
     };
     e.preventDefault();
   }
 },{passive:false});
 els.projectStrip.addEventListener('pointermove',e=>{
+  if(e.pointerType!=='touch') return;
   if(!S.timelinePointers.has(e.pointerId)) return;
   S.timelinePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(!S.pinch||S.timelinePointers.size<2) return;
-  const points=[...S.timelinePointers.values()].slice(0,2);
-  const rect=els.projectStrip.getBoundingClientRect();
-  const midpoint=(points[0].x+points[1].x)/2-rect.left;
-  applyTimelineZoom(S.pinch.zoom*pointerDistance(points)/S.pinch.distance,S.pinch.anchorRatio,midpoint);
-  S.suppressTimelineClickUntil=performance.now()+300;
-  e.preventDefault();
+  if(S.pinch&&S.timelinePointers.size>=2){
+    const points=S.pinch.pointerIds.map(pointerId=>S.timelinePointers.get(pointerId));
+    if(points.every(Boolean)){
+      const rect=els.projectStrip.getBoundingClientRect();
+      const midpoint=(points[0].x+points[1].x)/2-rect.left;
+      applyTimelineZoom(S.pinch.zoom*pointerDistance(points)/S.pinch.distance,S.pinch.anchorRatio,midpoint);
+      S.pinch.moved=true;
+      S.suppressTimelineClickUntil=performance.now()+300;
+      e.preventDefault();
+    }
+    return;
+  }
+  if(S.timelinePan&&S.timelinePan.pointerId===e.pointerId&&S.timelinePointers.size===1){
+    const delta=e.clientX-S.timelinePan.startX;
+    if(!S.timelinePan.moved&&Math.abs(delta)>4){
+      S.timelinePan.moved=true;
+      try{ els.projectStrip.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    if(S.timelinePan.moved){
+      els.projectStrip.scrollLeft=S.timelinePan.scrollLeft-delta;
+      S.suppressTimelineClickUntil=performance.now()+300;
+      e.preventDefault();
+    }
+  }
 },{passive:false});
 function endTimelinePointer(e){
+  if(e.pointerType!=='touch') return;
+  const endedPinch=!!(S.pinch&&S.pinch.pointerIds.includes(e.pointerId));
+  const endedPan=!!(S.timelinePan&&S.timelinePan.pointerId===e.pointerId);
+  const panMoved=!!(endedPan&&S.timelinePan.moved);
   S.timelinePointers.delete(e.pointerId);
-  if(S.pinch&&S.timelinePointers.size<2){
-    S.pinch=null; S.suppressTimelineClickUntil=performance.now()+300;
+  if(endedPinch){
+    const pinchMoved=S.pinch.moved;
+    S.pinch=null; S.timelinePan=null;
+    if(pinchMoved) S.suppressTimelineClickUntil=performance.now()+300;
     scheduleStripRender();
+  }else if(endedPan){
+    S.timelinePan=null;
+    if(panMoved) S.suppressTimelineClickUntil=performance.now()+300;
   }
+  if(!S.timelinePointers.size){ S.timelinePan=null; S.pinch=null; }
+  try{ els.projectStrip.releasePointerCapture(e.pointerId); }catch(err){}
 }
 els.projectStrip.addEventListener('pointerup',endTimelinePointer);
 els.projectStrip.addEventListener('pointercancel',endTimelinePointer);
@@ -2776,8 +2825,8 @@ document.addEventListener('keydown', e=>{
     e.preventDefault(); splitActiveClip(); return;
   }
   if(e.key===' '){ e.preventDefault(); els.playBtn.click(); }
-  if(e.key==='ArrowLeft'){ seekProjectTime(currentProjectTime()-(e.shiftKey?1:0.1)); }
-  if(e.key==='ArrowRight'){ seekProjectTime(currentProjectTime()+(e.shiftKey?1:0.1)); }
+  if(e.key==='ArrowLeft'){ e.preventDefault(); stepProjectFrames(e.shiftKey?-10:-1); }
+  if(e.key==='ArrowRight'){ e.preventDefault(); stepProjectFrames(e.shiftKey?10:1); }
 });
 })();
 </script>
