@@ -1363,15 +1363,25 @@ function renderTimeline(){
       addTrimBoundary(b,'start');
       addTrimBoundary(b,'end');
       b.appendChild(number);
-      b.addEventListener('click',async()=>{
+      b.addEventListener('click',async event=>{
         if(performance.now()<S.suppressTimelineClickUntil) return;
         S.reversePlaying=false;
         els.video.pause();
         setPlaybackUI(false);
-        const seek=clip.reversed?Math.max(clip.start,clip.end-0.001):clip.start;
+        const rect=b.getBoundingClientRect();
+        const pointerClick=event.detail!==0&&Number.isFinite(event.clientX);
+        const ratio=pointerClick?Math.min(1,Math.max(0,(event.clientX-rect.left)/Math.max(1,rect.width))):0;
+        const localTime=Math.min(Math.max(0,length-0.001),ratio*length);
+        const projectTime=projectOffset(index)+localTime;
+        const seek=clip.reversed?Math.max(clip.start,clip.end-Math.max(0.001,localTime)):clip.start+localTime;
+        S.scrubTargetTime=projectTime;
+        setScrubPosition(total?projectTime/total:0,projectTime);
+        els.timeline.querySelectorAll('.timeline-segment').forEach(segment=>{
+          segment.setAttribute('aria-pressed',String(Number(segment.dataset.index)===index));
+        });
         if(index===S.activeClip){
-          syncScrub();
-          needsDraw=true;
+          els.video.currentTime=seek;
+          needsDraw=false;
           return;
         }
         await activateClip(index,{seek,skipStrip:true});
@@ -1751,6 +1761,18 @@ function drawLivePreviews(){
   drawComposite(octx,els.out.width,els.out.height);
   if(S.floatingPreview) drawComposite(fctx,els.floatingCanvas.width,els.floatingCanvas.height);
 }
+function waitForPresentedVideoFrame(video){
+  return new Promise(resolve=>{
+    let finished=false;
+    const done=()=>{ if(finished) return; finished=true; resolve(); };
+    if(typeof video.requestVideoFrameCallback==='function'){
+      video.requestVideoFrameCallback(done);
+      setTimeout(done,160);
+    }else{
+      requestAnimationFrame(done);
+    }
+  });
+}
 function drawCachedScrubPreview(time){
   const frames=S.stripFrames;
   if(!frames.length) return false;
@@ -1884,12 +1906,7 @@ function loop(){
       if(v.currentTime<=clip.start+0.015){ S.reversePlaying=false; advancePreview(); }
     }
   }
-  if(S.sdrag){
-    if(needsDraw&&!v.seeking){
-      drawLivePreviews();
-      needsDraw=false;
-    }
-  }else if(!v.paused||S.reversePlaying||needsDraw){
+  if(!S.sdrag&&(!v.paused||S.reversePlaying||needsDraw)){
     drawLivePreviews();
     needsDraw=false;
   }
@@ -1905,7 +1922,11 @@ function loop(){
   }
   requestAnimationFrame(loop);
 }
-els.video.addEventListener('seeked',()=>{ needsDraw=true; syncScrub(); });
+els.video.addEventListener('seeked',()=>{
+  if(S.sdrag) return;
+  needsDraw=true;
+  syncScrub();
+});
 els.video.addEventListener('play',()=>{
   setPlaybackUI(true);
   ensureAudio();
@@ -2138,8 +2159,11 @@ async function flushLiveScrubPreview(){
       }catch(err){}
       if(!S.sdrag||generation!==S.liveScrubGeneration) break;
       if(S.liveScrubQueuedTime===null){
-        drawLivePreviews();
-        needsDraw=false;
+        await waitForPresentedVideoFrame(els.video);
+        if(S.sdrag&&generation===S.liveScrubGeneration&&S.liveScrubQueuedTime===null){
+          drawLivePreviews();
+          needsDraw=false;
+        }
       }
     }
   }finally{
@@ -2160,7 +2184,6 @@ function handleScrub(e){
   const projectTime=f*projectDuration();
   S.scrubTargetTime=projectTime;
   setScrubPosition(f,projectTime);
-  drawCachedScrubPreview(projectTime);
   queueLiveScrubPreview(projectTime);
   scrollTimelineToTime(projectTime,true);
 }
@@ -2179,7 +2202,6 @@ function handlePlayheadScrub(e){
   const projectTime=f*projectDuration();
   S.scrubTargetTime=projectTime;
   setScrubPosition(f,projectTime);
-  drawCachedScrubPreview(projectTime);
   queueLiveScrubPreview(projectTime);
 }
 function setScrubPosition(f,time){
