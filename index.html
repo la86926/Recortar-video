@@ -377,11 +377,18 @@ body.editor-open #scroll{padding-bottom:calc(96px + env(safe-area-inset-bottom))
 .timeline{position:absolute;z-index:3;inset:0}
 .timeline-segment{
   position:absolute;top:0;bottom:0;appearance:none;border:0;border-radius:0;
-  background:rgba(13,15,12,.18);color:#fff;cursor:pointer;padding:0;overflow:hidden;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.20);
+  background:rgba(8,10,8,.36);color:#fff;cursor:pointer;padding:0;overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);
+  transition:background .18s ease,box-shadow .18s ease,filter .18s ease;
+}
+.timeline-segment:not([aria-pressed="true"]){
+  background:rgba(5,7,5,.46);
+  -webkit-backdrop-filter:brightness(.56) saturate(.48);
+  backdrop-filter:brightness(.56) saturate(.48);
 }
 .timeline-segment[aria-pressed="true"]{
-  z-index:2;background:rgba(138,160,124,.20);
+  z-index:2;background:rgba(138,160,124,.06);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
   box-shadow:inset 0 0 0 4px #FFD166,0 0 0 1px rgba(25,25,25,.5);
 }
 .timeline-segment span{
@@ -394,26 +401,20 @@ body.editor-open #scroll{padding-bottom:calc(96px + env(safe-area-inset-bottom))
   content:"↶";position:absolute;right:7px;top:6px;width:24px;height:24px;display:grid;place-items:center;
   border-radius:999px;background:rgba(18,18,18,.72);font:700 15px var(--sans)
 }
-.trim-handle{
-  position:absolute;z-index:8;top:0;bottom:0;width:24px;
-  touch-action:none;cursor:col-resize;opacity:.76
+.trim-boundary{
+  position:absolute;z-index:8;top:0;bottom:0;width:18px;
+  pointer-events:none;opacity:0
 }
-.trim-handle.start{left:0}
-.trim-handle.end{right:0}
-.trim-handle::before{
-  content:"";position:absolute;top:50%;width:5px;height:42px;
-  transform:translateY(-50%);border-radius:999px;background:#F7F7F7;
-  box-shadow:0 0 0 1px rgba(18,18,18,.55),0 3px 10px rgba(0,0,0,.26)
+.trim-boundary.start{left:0}
+.trim-boundary.end{right:0}
+.trim-boundary::before{
+  content:"";position:absolute;top:0;bottom:0;width:3px;
+  border-radius:2px;background:#F7F7F7;
+  box-shadow:0 0 0 1px rgba(18,18,18,.42)
 }
-.trim-handle.start::before{left:5px}
-.trim-handle.end::before{right:5px}
-.timeline-segment[aria-pressed="true"] .trim-handle{opacity:1}
-.timeline-segment.trimming{z-index:9}
-.timeline-segment.trimming .trim-handle::before{
-  background:#0A84FF;box-shadow:0 0 0 1px rgba(8,42,78,.48),0 0 12px rgba(10,132,255,.55)
-}
-html[data-theme="dark"] .timeline-segment.trimming .trim-handle::before{background:#64D2FF}
-body.timeline-trimming .project-playhead{opacity:.36}
+.trim-boundary.start::before{left:0}
+.trim-boundary.end::before{right:0}
+.timeline-segment[aria-pressed="true"] .trim-boundary{opacity:1}
 .cut-line{
   position:absolute;z-index:4;top:0;bottom:0;width:3px;margin-left:-1.5px;
   background:#FFD166;box-shadow:0 0 0 1px rgba(25,25,25,.68),0 0 8px rgba(255,209,102,.68);
@@ -969,12 +970,12 @@ const S = {
   floatingPreview:false, timelineZoom:1, timelinePointers:new Map(), pinch:null, scrubWasPlaying:false,
   scrubTargetTime:0, liveScrubBusy:false, liveScrubQueuedTime:null, liveScrubGeneration:0,
   stripFrames:[], stripFrameTimes:[],
-  stripTimer:null, suppressTimelineClickUntil:0, trimDrag:null, floatDrag:null,
+  stripTimer:null, suppressTimelineClickUntil:0, floatDrag:null,
   floatPointers:new Map(), floatGesture:null
 };
 
 document.addEventListener('touchmove', e=>{
-  if(S.drag || S.sdrag || S.pinch || S.trimDrag || S.floatDrag || S.floatGesture) e.preventDefault();
+  if(S.drag || S.sdrag || S.pinch || S.floatDrag || S.floatGesture) e.preventDefault();
 }, {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('dragstart', e=>e.preventDefault());
@@ -1333,103 +1334,11 @@ function updateTimelineLayout(focusTime=null){
   const time=Math.min(total,Math.max(0,focusTime==null?currentProjectTime():focusTime));
   setScrubPosition(total?time/total:0,time);
 }
-function trimBoundaryTime(index,side){
-  return projectOffset(index)+(side==='end'?clipDuration(S.clips[index]):0);
-}
-function trimBoundarySourceTime(clip,side){
-  if(clip.reversed) return side==='start'?Math.max(clip.start,clip.end-.001):clip.start;
-  return side==='start'?clip.start:Math.max(clip.start,clip.end-.001);
-}
-function saveTrimHistory(td){
-  if(td.historySaved) return;
-  S.history.push(td.before);
-  if(S.history.length>60) S.history.shift();
-  S.redo=[];
-  els.undoBtn.disabled=false;
-  els.redoBtn.disabled=true;
-  td.historySaved=true;
-}
-function beginClipTrim(segment,index,side,e){
-  const clip=S.clips[index], source=clip&&sourceById(clip.sourceId);
-  if(!clip||!source||S.exporting) return;
-  e.stopPropagation();
-  e.preventDefault();
-  S.reversePlaying=false;
-  els.video.pause();
-  setPlaybackUI(false);
-  const rect=els.timelineContent.getBoundingClientRect();
-  S.trimDrag={
-    pointerId:e.pointerId,index,side,segment,
-    startX:e.clientX,contentWidth:Math.max(1,rect.width),projectTotal:Math.max(.001,projectDuration()),
-    originalStart:clip.start,originalEnd:clip.end,sourceDuration:source.duration,
-    before:snapshot(),historySaved:false,changed:false
-  };
-  document.body.classList.add('timeline-trimming');
-  segment.classList.add('trimming');
-  try{ e.currentTarget.setPointerCapture(e.pointerId); }catch(err){}
-}
-function moveClipTrim(e){
-  const td=S.trimDrag;
-  if(!td||e.pointerId!==td.pointerId) return;
-  e.stopPropagation();
-  e.preventDefault();
-  const clip=S.clips[td.index];
-  if(!clip) return;
-  const minLength=Math.min(.12,Math.max(.01,td.sourceDuration/100),Math.max(.005,(td.originalEnd-td.originalStart)/2));
-  const delta=(e.clientX-td.startX)/td.contentWidth*td.projectTotal;
-  let start=td.originalStart, end=td.originalEnd;
-  if(!clip.reversed){
-    if(td.side==='start') start=Math.min(end-minLength,Math.max(0,td.originalStart+delta));
-    else end=Math.max(start+minLength,Math.min(td.sourceDuration,td.originalEnd+delta));
-  }else{
-    if(td.side==='start') end=Math.max(start+minLength,Math.min(td.sourceDuration,td.originalEnd-delta));
-    else start=Math.min(end-minLength,Math.max(0,td.originalStart-delta));
-  }
-  if(Math.abs(start-clip.start)<.0005&&Math.abs(end-clip.end)<.0005) return;
-  saveTrimHistory(td);
-  clip.start=start;
-  clip.end=end;
-  td.changed=true;
-  const projectTime=trimBoundaryTime(td.index,td.side);
-  S.scrubTargetTime=projectTime;
-  updateTimelineLayout(projectTime);
-  drawCachedScrubPreview(projectTime);
-  if(td.index===S.activeClip&&S.sourceId===clip.sourceId){
-    S.start=clip.start;
-    S.end=clip.end;
-    els.video.currentTime=trimBoundarySourceTime(clip,td.side);
-    needsDraw=true;
-  }
-}
-async function finishClipTrim(e){
-  const td=S.trimDrag;
-  if(!td||e.pointerId!==td.pointerId) return;
-  e.stopPropagation();
-  e.preventDefault();
-  S.trimDrag=null;
-  document.body.classList.remove('timeline-trimming');
-  td.segment.classList.remove('trimming');
-  S.suppressTimelineClickUntil=performance.now()+320;
-  if(!td.changed){
-    renderTimeline();
-    return;
-  }
-  const clip=S.clips[td.index];
-  const seek=trimBoundarySourceTime(clip,td.side);
-  await activateClip(td.index,{seek,skipStrip:true});
-  generateStrip();
-  showEditNotice(td.side==='start'?'Inicio del fragmento ajustado.':'Final del fragmento ajustado.','ok');
-}
-function addTrimHandle(segment,index,side){
-  const handle=document.createElement('i');
-  handle.className='trim-handle '+side;
-  handle.setAttribute('aria-hidden','true');
-  handle.addEventListener('pointerdown',e=>beginClipTrim(segment,index,side,e),{passive:false});
-  handle.addEventListener('pointermove',moveClipTrim,{passive:false});
-  handle.addEventListener('pointerup',finishClipTrim,{passive:false});
-  handle.addEventListener('pointercancel',finishClipTrim,{passive:false});
-  handle.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); });
-  segment.appendChild(handle);
+function addTrimBoundary(segment,side){
+  const boundary=document.createElement('i');
+  boundary.className='trim-boundary '+side;
+  boundary.setAttribute('aria-hidden','true');
+  segment.appendChild(boundary);
 }
 function renderTimeline(){
   els.timeline.innerHTML='';
@@ -1448,8 +1357,8 @@ function renderTimeline(){
       b.setAttribute('aria-label','Seleccionar fragmento '+(index+1));
       const number=document.createElement('span');
       number.textContent=String(index+1);
-      addTrimHandle(b,index,'start');
-      addTrimHandle(b,index,'end');
+      addTrimBoundary(b,'start');
+      addTrimBoundary(b,'end');
       b.appendChild(number);
       b.addEventListener('click',async()=>{
         if(performance.now()<S.suppressTimelineClickUntil) return;
