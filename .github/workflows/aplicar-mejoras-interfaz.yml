@@ -5,12 +5,15 @@ on:
     branches: [main]
     paths:
       - .github/workflows/aplicar-mejoras-interfaz.yml
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   aplicar-cambios:
+    if: github.event_name == 'push' || github.event.issue.title == '[automatizacion] aplicar mejoras interfaz'
     runs-on: ubuntu-latest
     steps:
       - name: Descargar repositorio
