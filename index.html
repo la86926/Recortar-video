@@ -29,9 +29,9 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   const oldLockButton = `        <button class="icon-btn" id="cropLock" type="button" aria-pressed="false" aria-label="Confirmar encuadre" title="Confirmar encuadre">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
         </button>`;
-  const newLockButton = `        <button class="icon-btn crop-lock-control" id="cropLock" type="button" aria-pressed="false" aria-label="Confirmar recorte" title="Confirmar recorte">
+  const newLockButton = `        <button class="icon-btn crop-lock-control" id="cropLock" type="button" aria-pressed="false" aria-label="Bloquear recorte" title="Bloquear recorte">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
-          <span class="crop-lock-label">Confirmar recorte</span>
+          <span class="crop-lock-label">Bloquear recorte</span>
         </button>`;
 
   const oldNotice = `function showEditNotice(message,type=''){
@@ -58,28 +58,91 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   S.drag=null; S.stageTap=null; markHandle(null);
   els.stage.classList.toggle('crop-locked',S.cropLocked);
   els.cropLock.setAttribute('aria-pressed',String(S.cropLocked));
-  const label=S.cropLocked?'Editar recorte':'Confirmar recorte';
+  const label=S.cropLocked?'Desbloquear recorte':'Bloquear recorte';
   const visibleLabel=els.cropLock.querySelector('.crop-lock-label');
-  if(visibleLabel) visibleLabel.textContent=S.cropLocked?'Recorte bloqueado':'Confirmar recorte';
+  if(visibleLabel) visibleLabel.textContent=S.cropLocked?'Recorte bloqueado':'Bloquear recorte';
   els.cropLock.setAttribute('aria-label',label);
   els.cropLock.title=label;
 }`;
 
   const oldExportFps = `  const fps=Math.max(1,Math.min(120,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
-  const newExportFps = `  // 60 fps como máximo evita que la captura del canvas se atrase respecto al audio.
-  const fps=Math.max(1,Math.min(60,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
+  const newExportFps = `  const appleMobile=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  // En iPhone/iPad 30 fps reduce la posibilidad de que el codificador de video se atrase frente al audio.
+  const fps=Math.max(1,Math.min(appleMobile?30:60,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
+
+  const oldBitrate = `  const bitrate=Math.max(4000000,Math.min(300000000,Math.round(Math.max(sourceMatchedRate,nativeQualityFloor))));`;
+  const newBitrate = `  // Evita sobrecargar MediaRecorder en WebKit móvil, una causa frecuente de deriva A/V al exportar.
+  const bitrate=Math.max(4000000,Math.min(appleMobile?24000000:120000000,Math.round(Math.max(sourceMatchedRate,nativeQualityFloor))));`;
 
   const oldAudioContext = `    const ctx=new AC();`;
   const newAudioContext = `    let ctx;
     try{ ctx=new AC({sampleRate:48000,latencyHint:'playback'}); }
     catch(e){ ctx=new AC(); }`;
 
-  const oldCaptureStream = `  const stream=cvs.captureStream(fps);`;
-  const newCaptureStream = `  const stream=cvs.captureStream(fps);
-  const exportVideoTrack=stream.getVideoTracks()[0]||null;
-  if(exportVideoTrack){
-    try{ exportVideoTrack.contentHint='motion'; }catch(e){}
+  const oldAudioRouting = `  const stream=cvs.captureStream(fps);
+  let dest=null, audioAdded=false;
+  const a=ensureAudio();
+  if(els.keepAudio.checked){
+    if(a){
+      try{
+        dest=a.ctx.createMediaStreamDestination();
+        S.exportGain=a.ctx.createGain();
+        S.exportGain.gain.value=1.1;
+        a.src.connect(S.exportGain); S.exportGain.connect(dest);
+        const at=dest.stream.getAudioTracks()[0];
+        if(at){ stream.addTrack(at); audioAdded=true; }
+        if(a.ctx.state==='suspended') await a.ctx.resume();
+      }catch(e){ dest=null; }
+    }
+    if(!audioAdded&&typeof v.captureStream==='function'){
+      try{
+        S.sourceCapture=v.captureStream();
+        const at=S.sourceCapture.getAudioTracks()[0];
+        if(at){ stream.addTrack(at); audioAdded=true; }
+      }catch(e){ S.sourceCapture=null; }
+    }
   }`;
+  const newAudioRouting = `  const stream=cvs.captureStream(fps);
+  const exportVideoTrack=stream.getVideoTracks()[0]||null;
+  if(exportVideoTrack){ try{ exportVideoTrack.contentHint='motion'; }catch(e){} }
+
+  let dest=null, audioAdded=false, directAudio=false, a=null;
+  const needsProcessedAudio=plan.some(c=>(c.fadeAudioIn||0)>0||(c.fadeAudioOut||0)>0||c.reversed);
+  if(els.keepAudio.checked){
+    // Cuando el navegador lo permite, el audio sale del mismo elemento de video y comparte su reloj.
+    const captureMedia=v.captureStream||v.mozCaptureStream;
+    if(!needsProcessedAudio&&typeof captureMedia==='function'){
+      try{
+        S.sourceCapture=captureMedia.call(v);
+        const at=S.sourceCapture.getAudioTracks()[0];
+        if(at){ stream.addTrack(at); audioAdded=true; directAudio=true; }
+      }catch(e){ S.sourceCapture=null; }
+    }
+
+    // Safari/iOS no ofrece captureStream() para <video>; usar Web Audio con compensación pequeña.
+    if(!audioAdded){
+      a=ensureAudio();
+      if(a){
+        try{
+          dest=a.ctx.createMediaStreamDestination();
+          S.exportGain=a.ctx.createGain();
+          S.exportGain.gain.value=1.1;
+          const exportDelay=a.ctx.createDelay(.25);
+          exportDelay.delayTime.value=appleMobile?Math.min(.12,Math.max(.035,(a.ctx.baseLatency||0)+(1/fps))):0;
+          a.src.connect(S.exportGain);
+          S.exportGain.connect(exportDelay);
+          exportDelay.connect(dest);
+          const at=dest.stream.getAudioTracks()[0];
+          if(at){ stream.addTrack(at); audioAdded=true; }
+          if(a.ctx.state==='suspended') await a.ctx.resume();
+        }catch(e){ dest=null; }
+      }
+    }
+  }`;
+
+  const oldSilenceCall = `  silencePreviewForExport(a);`;
+  const newSilenceCall = `  // No tocar el volumen del elemento cuando su pista se captura directamente.
+  if(!directAudio) silencePreviewForExport(a);`;
 
   const oldRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};`;
   const newRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};
@@ -89,9 +152,7 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   S.exportState.clipStartedAt=performance.now();
   if(!S.exportState.plan[0].reversed) await v.play().catch(()=>{});
   S.raf=requestAnimationFrame(exportTick);`;
-  const newRecorderStart = `  // Esperar a que MediaRecorder esté realmente activo antes de arrancar el video.
-  // Esto evita que audio y canvas comiencen con relojes ligeramente distintos.
-  await new Promise(resolve=>{
+  const newRecorderStart = `  await new Promise(resolve=>{
     let settled=false, timer=0;
     const ready=()=>{
       if(settled) return;
@@ -104,8 +165,8 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
     timer=setTimeout(ready,400);
   });
   if(!S.exporting||!S.exportState) return;
-  S.exportState.clipStartedAt=performance.now();
   drawComposite(S.exportState.ctx,S.exportState.output.w,S.exportState.output.h);
+  S.exportState.clipStartedAt=performance.now();
   if(!S.exportState.plan[0].reversed) await v.play().catch(()=>{});
   S.raf=requestAnimationFrame(exportTick);`;
 
@@ -122,7 +183,7 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
 `;
   const newRecorderResume = ``;
 
-  const cssOverride = `/* Mejoras solicitadas: visor compacto, eliminar visible, bloqueo claro y pantalla sin avisos flotantes */
+  const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
 .edit-toast{display:none !important}
 .stage{
   width:min(82%,480px) !important;
@@ -205,8 +266,10 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldNotice, newNotice, 'avisos flotantes');
     html = replaceExactlyOnce(html, oldCropLock, newCropLock, 'estado del recorte');
     html = replaceExactlyOnce(html, oldExportFps, newExportFps, 'frecuencia de exportación');
+    html = replaceExactlyOnce(html, oldBitrate, newBitrate, 'bitrate de exportación');
     html = replaceExactlyOnce(html, oldAudioContext, newAudioContext, 'reloj de audio');
-    html = replaceExactlyOnce(html, oldCaptureStream, newCaptureStream, 'captura de video');
+    html = replaceExactlyOnce(html, oldAudioRouting, newAudioRouting, 'sincronización de pistas');
+    html = replaceExactlyOnce(html, oldSilenceCall, newSilenceCall, 'silencio de vista previa');
     html = replaceExactlyOnce(html, oldRecorderOptions, newRecorderOptions, 'codificación de audio');
     html = replaceExactlyOnce(html, oldRecorderStart, newRecorderStart, 'inicio sincronizado de la grabación');
     html = replaceExactlyOnce(html, oldRecorderPause, newRecorderPause, 'cambio entre recortes sin pausar MP4');
