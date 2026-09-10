@@ -65,19 +65,55 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   els.cropLock.title=label;
 }`;
 
+  const oldExportState = `  exportState:null, exportGain:null, exportMonitorDisconnected:false, exportElementVolume:null,
+  sourceCapture:null, projectName:'video', projectFormat:'mp4', gifImporting:false,`;
+  const newExportState = `  exportState:null, exportGain:null, exportMonitorDisconnected:false, exportElementVolume:null,
+  exportBufferAudio:null, sourceCapture:null, projectName:'video', projectFormat:'mp4', gifImporting:false,`;
+
   const oldExportFps = `  const fps=Math.max(1,Math.min(120,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
   const newExportFps = `  const appleMobile=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-  // En iPhone/iPad 30 fps reduce la posibilidad de que el codificador de video se atrase frente al audio.
   const fps=Math.max(1,Math.min(appleMobile?30:60,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
 
   const oldBitrate = `  const bitrate=Math.max(4000000,Math.min(300000000,Math.round(Math.max(sourceMatchedRate,nativeQualityFloor))));`;
-  const newBitrate = `  // Evita sobrecargar MediaRecorder en WebKit móvil, una causa frecuente de deriva A/V al exportar.
-  const bitrate=Math.max(4000000,Math.min(appleMobile?24000000:120000000,Math.round(Math.max(sourceMatchedRate,nativeQualityFloor))));`;
+  const newBitrate = `  const bitrate=Math.max(4000000,Math.min(appleMobile?24000000:120000000,Math.round(Math.max(sourceMatchedRate,nativeQualityFloor))));`;
 
   const oldAudioContext = `    const ctx=new AC();`;
   const newAudioContext = `    let ctx;
     try{ ctx=new AC({sampleRate:48000,latencyHint:'playback'}); }
     catch(e){ ctx=new AC(); }`;
+
+  const oldClearAudio = `function clearExportAudioRouting(){
+  if(S.exportGain&&S.audio){
+    try{ S.audio.src.disconnect(S.exportGain); }catch(e){}
+    try{ S.exportGain.disconnect(); }catch(e){}
+  }
+  S.exportGain=null; S.dest=null;
+  if(S.sourceCapture){
+    try{ S.sourceCapture.getTracks().forEach(t=>t.stop()); }catch(e){}
+    S.sourceCapture=null;
+  }
+  restorePreviewAfterExport();
+}`;
+  const newClearAudio = `function clearExportAudioRouting(){
+  if(S.exportGain&&S.audio){
+    try{ S.audio.src.disconnect(S.exportGain); }catch(e){}
+    try{ S.exportGain.disconnect(); }catch(e){}
+  }
+  S.exportGain=null; S.dest=null;
+  if(S.sourceCapture){
+    try{ S.sourceCapture.getTracks().forEach(t=>t.stop()); }catch(e){}
+    S.sourceCapture=null;
+  }
+  if(S.exportBufferAudio){
+    const b=S.exportBufferAudio;
+    try{ if(b.started) b.node.stop(); }catch(e){}
+    try{ b.node.disconnect(); }catch(e){}
+    try{ b.gain.disconnect(); }catch(e){}
+    try{ if(b.ctx&&b.ctx.state!=='closed') b.ctx.close(); }catch(e){}
+    S.exportBufferAudio=null;
+  }
+  restorePreviewAfterExport();
+}`;
 
   const oldAudioRouting = `  const stream=cvs.captureStream(fps);
   let dest=null, audioAdded=false;
@@ -107,11 +143,11 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   if(exportVideoTrack){ try{ exportVideoTrack.contentHint='motion'; }catch(e){} }
 
   let dest=null, audioAdded=false, directAudio=false, a=null;
-  const needsProcessedAudio=plan.some(c=>(c.fadeAudioIn||0)>0||(c.fadeAudioOut||0)>0||c.reversed);
+  const simpleAudioPlan=plan.length===1&&!plan[0].reversed&&!(plan[0].fadeAudioIn||0)&&!(plan[0].fadeAudioOut||0);
   if(els.keepAudio.checked){
-    // Cuando el navegador lo permite, el audio sale del mismo elemento de video y comparte su reloj.
+    // En navegadores compatibles se toma el audio directamente del mismo video.
     const captureMedia=v.captureStream||v.mozCaptureStream;
-    if(!needsProcessedAudio&&typeof captureMedia==='function'){
+    if(simpleAudioPlan&&typeof captureMedia==='function'){
       try{
         S.sourceCapture=captureMedia.call(v);
         const at=S.sourceCapture.getAudioTracks()[0];
@@ -119,7 +155,36 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
       }catch(e){ S.sourceCapture=null; }
     }
 
-    // Safari/iOS no ofrece captureStream() para <video>; usar Web Audio con compensación pequeña.
+    // Safari/iOS: decodificar el audio del archivo y arrancarlo con el primer fotograma realmente presentado.
+    if(!audioAdded&&simpleAudioPlan){
+      const clip=plan[0], source=sourceById(clip.sourceId);
+      if(source&&source.file&&typeof source.file.arrayBuffer==='function'){
+        let bctx=null;
+        try{
+          const BAC=window.AudioContext||window.webkitAudioContext;
+          try{ bctx=new BAC({sampleRate:48000,latencyHint:'playback'}); }
+          catch(e){ bctx=new BAC(); }
+          const raw=await source.file.arrayBuffer();
+          const decoded=await bctx.decodeAudioData(raw);
+          dest=bctx.createMediaStreamDestination();
+          const gain=bctx.createGain(); gain.gain.value=1.1; gain.connect(dest);
+          const node=bctx.createBufferSource(); node.buffer=decoded; node.connect(gain);
+          const at=dest.stream.getAudioTracks()[0];
+          if(at){
+            stream.addTrack(at); audioAdded=true;
+            S.exportBufferAudio={ctx:bctx,node,gain,clip,started:false};
+            if(bctx.state==='suspended') await bctx.resume();
+          }else{
+            try{ node.disconnect(); gain.disconnect(); bctx.close(); }catch(e){}
+          }
+        }catch(e){
+          try{ if(bctx&&bctx.state!=='closed') bctx.close(); }catch(err){}
+          S.exportBufferAudio=null; dest=null;
+        }
+      }
+    }
+
+    // Respaldo para proyectos complejos con fundidos, inversión o varios fragmentos.
     if(!audioAdded){
       a=ensureAudio();
       if(a){
@@ -127,11 +192,7 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
           dest=a.ctx.createMediaStreamDestination();
           S.exportGain=a.ctx.createGain();
           S.exportGain.gain.value=1.1;
-          const exportDelay=a.ctx.createDelay(.25);
-          exportDelay.delayTime.value=appleMobile?Math.min(.12,Math.max(.035,(a.ctx.baseLatency||0)+(1/fps))):0;
-          a.src.connect(S.exportGain);
-          S.exportGain.connect(exportDelay);
-          exportDelay.connect(dest);
+          a.src.connect(S.exportGain); S.exportGain.connect(dest);
           const at=dest.stream.getAudioTracks()[0];
           if(at){ stream.addTrack(at); audioAdded=true; }
           if(a.ctx.state==='suspended') await a.ctx.resume();
@@ -141,8 +202,7 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   }`;
 
   const oldSilenceCall = `  silencePreviewForExport(a);`;
-  const newSilenceCall = `  // No tocar el volumen del elemento cuando su pista se captura directamente.
-  if(!directAudio) silencePreviewForExport(a);`;
+  const newSilenceCall = `  if(!directAudio) silencePreviewForExport(a);`;
 
   const oldRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};`;
   const newRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};
@@ -167,7 +227,39 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   if(!S.exporting||!S.exportState) return;
   drawComposite(S.exportState.ctx,S.exportState.output.w,S.exportState.output.h);
   S.exportState.clipStartedAt=performance.now();
-  if(!S.exportState.plan[0].reversed) await v.play().catch(()=>{});
+
+  if(!S.exportState.plan[0].reversed){
+    if(S.exportBufferAudio){
+      let resolved=false;
+      const firstFrame=new Promise(resolve=>{
+        const done=mediaTime=>{
+          if(resolved) return;
+          resolved=true;
+          resolve(Number.isFinite(mediaTime)?mediaTime:v.currentTime);
+        };
+        if(typeof v.requestVideoFrameCallback==='function'){
+          try{ v.requestVideoFrameCallback((now,meta)=>done(meta&&meta.mediaTime)); }
+          catch(e){}
+        }
+        v.addEventListener('playing',()=>setTimeout(()=>done(v.currentTime),0),{once:true});
+        setTimeout(()=>done(v.currentTime),300);
+      });
+      const playPromise=v.play().catch(()=>{});
+      const mediaTime=await firstFrame;
+      if(!S.exporting||!S.exportState) return;
+      drawComposite(S.exportState.ctx,S.exportState.output.w,S.exportState.output.h);
+      const b=S.exportBufferAudio, clip=b.clip;
+      const offset=Math.min(clip.end,Math.max(clip.start,mediaTime));
+      const duration=Math.max(.001,clip.end-offset);
+      try{
+        b.node.start(b.ctx.currentTime,offset,duration);
+        b.started=true;
+      }catch(e){}
+      await playPromise;
+    }else{
+      await v.play().catch(()=>{});
+    }
+  }
   S.raf=requestAnimationFrame(exportTick);`;
 
   const oldRecorderPause = `    let resumeRecorder=false;
@@ -265,9 +357,11 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldLockButton, newLockButton, 'control del recorte');
     html = replaceExactlyOnce(html, oldNotice, newNotice, 'avisos flotantes');
     html = replaceExactlyOnce(html, oldCropLock, newCropLock, 'estado del recorte');
+    html = replaceExactlyOnce(html, oldExportState, newExportState, 'estado de audio exportado');
     html = replaceExactlyOnce(html, oldExportFps, newExportFps, 'frecuencia de exportación');
     html = replaceExactlyOnce(html, oldBitrate, newBitrate, 'bitrate de exportación');
     html = replaceExactlyOnce(html, oldAudioContext, newAudioContext, 'reloj de audio');
+    html = replaceExactlyOnce(html, oldClearAudio, newClearAudio, 'limpieza de audio');
     html = replaceExactlyOnce(html, oldAudioRouting, newAudioRouting, 'sincronización de pistas');
     html = replaceExactlyOnce(html, oldSilenceCall, newSilenceCall, 'silencio de vista previa');
     html = replaceExactlyOnce(html, oldRecorderOptions, newRecorderOptions, 'codificación de audio');
