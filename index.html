@@ -65,8 +65,49 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   els.cropLock.title=label;
 }`;
 
-  const oldRecorderStart = `  rec.start(200);`;
-  const newRecorderStart = `  rec.start();`;
+  const oldExportFps = `  const fps=Math.max(1,Math.min(120,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
+  const newExportFps = `  // 60 fps como máximo evita que la captura del canvas se atrase respecto al audio.
+  const fps=Math.max(1,Math.min(60,Math.max(...usedSources.map(s=>s.fps||30),1)));`;
+
+  const oldAudioContext = `    const ctx=new AC();`;
+  const newAudioContext = `    let ctx;
+    try{ ctx=new AC({sampleRate:48000,latencyHint:'playback'}); }
+    catch(e){ ctx=new AC(); }`;
+
+  const oldCaptureStream = `  const stream=cvs.captureStream(fps);`;
+  const newCaptureStream = `  const stream=cvs.captureStream(fps);
+  const exportVideoTrack=stream.getVideoTracks()[0]||null;
+  if(exportVideoTrack){
+    try{ exportVideoTrack.contentHint='motion'; }catch(e){}
+  }`;
+
+  const oldRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};`;
+  const newRecorderOptions = `  const recorderOptions={videoBitsPerSecond:bitrate,audioBitsPerSecond:320000};
+  try{ recorderOptions.audioBitrateMode='constant'; }catch(e){}`;
+
+  const oldRecorderStart = `  rec.start(200);
+  S.exportState.clipStartedAt=performance.now();
+  if(!S.exportState.plan[0].reversed) await v.play().catch(()=>{});
+  S.raf=requestAnimationFrame(exportTick);`;
+  const newRecorderStart = `  // Esperar a que MediaRecorder esté realmente activo antes de arrancar el video.
+  // Esto evita que audio y canvas comiencen con relojes ligeramente distintos.
+  await new Promise(resolve=>{
+    let settled=false, timer=0;
+    const ready=()=>{
+      if(settled) return;
+      settled=true;
+      if(timer) clearTimeout(timer);
+      resolve();
+    };
+    rec.addEventListener('start',ready,{once:true});
+    rec.start();
+    timer=setTimeout(ready,400);
+  });
+  if(!S.exporting||!S.exportState) return;
+  S.exportState.clipStartedAt=performance.now();
+  drawComposite(S.exportState.ctx,S.exportState.output.w,S.exportState.output.h);
+  if(!S.exportState.plan[0].reversed) await v.play().catch(()=>{});
+  S.raf=requestAnimationFrame(exportTick);`;
 
   const oldRecorderPause = `    let resumeRecorder=false;
     if(nextClip&&S.rec&&S.rec.state==='recording'){
@@ -81,8 +122,13 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
 `;
   const newRecorderResume = ``;
 
-  const cssOverride = `/* Mejoras solicitadas: eliminar visible, bloqueo claro y pantalla sin avisos flotantes */
+  const cssOverride = `/* Mejoras solicitadas: visor compacto, eliminar visible, bloqueo claro y pantalla sin avisos flotantes */
 .edit-toast{display:none !important}
+.stage{
+  width:min(82%,480px) !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
 .editor-toolbar .danger-tool{
   background:#FFFFFF !important;
   color:#E23D3D !important;
@@ -158,7 +204,11 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldLockButton, newLockButton, 'control del recorte');
     html = replaceExactlyOnce(html, oldNotice, newNotice, 'avisos flotantes');
     html = replaceExactlyOnce(html, oldCropLock, newCropLock, 'estado del recorte');
-    html = replaceExactlyOnce(html, oldRecorderStart, newRecorderStart, 'grabación MP4 continua');
+    html = replaceExactlyOnce(html, oldExportFps, newExportFps, 'frecuencia de exportación');
+    html = replaceExactlyOnce(html, oldAudioContext, newAudioContext, 'reloj de audio');
+    html = replaceExactlyOnce(html, oldCaptureStream, newCaptureStream, 'captura de video');
+    html = replaceExactlyOnce(html, oldRecorderOptions, newRecorderOptions, 'codificación de audio');
+    html = replaceExactlyOnce(html, oldRecorderStart, newRecorderStart, 'inicio sincronizado de la grabación');
     html = replaceExactlyOnce(html, oldRecorderPause, newRecorderPause, 'cambio entre recortes sin pausar MP4');
     html = replaceExactlyOnce(html, oldRecorderResume, newRecorderResume, 'reanudación MP4 innecesaria');
     html = replaceExactlyOnce(html, '@media (max-width:430px){', cssOverride + '@media (max-width:430px){', 'estilos');
@@ -169,7 +219,7 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     let lastError;
     for (const source of BASE_SOURCES) {
       try {
-        const response = await fetch(source, {cache:'force-cache'});
+        const response = await fetch(source, {cache:'no-cache'});
         if (!response.ok) throw new Error('HTTP ' + response.status);
         return await response.text();
       } catch (error) {
