@@ -63,7 +63,6 @@
       const image = images.get(o.imageId);
       if (!image) continue;
       let alpha = overlayAlpha(o, t);
-      if (editingDraw && o.id === selectedId && alpha < 0.45) alpha = 0.45;
       if (alpha <= 0) continue;
       const box = overlayBox(o, w, h);
       ctx.save();
@@ -232,7 +231,7 @@
     selectedId = null;
     stage.classList.remove('image-mode');
     if (S.VW && S.VH) stage.style.aspectRatio = S.VW + ' / ' + S.VH;
-    pointers.clear(); gesture = null;
+    stageGestures.clear();
     renderTrack();
     syncCard();
     try { B.syncCrop(); } catch (error) {}
@@ -243,75 +242,127 @@
   if (ratios) ratios.addEventListener('click', () => exitEdit(), true);
 
   // Gestos sobre la imagen: 1 dedo mueve, 2 dedos agrandan/achican y giran.
-  const pointers = new Map();
-  let gesture = null;
-  const pointInfo = e => {
-    const r = editCanvas.getBoundingClientRect();
-    return {x: e.clientX, y: e.clientY, u: (e.clientX - r.left) / Math.max(1, r.width), v: (e.clientY - r.top) / Math.max(1, r.height)};
-  };
-  function startGesture(){
-    const o = findOverlay(selectedId);
-    if (!o) { gesture = null; return; }
-    const list = [...pointers.values()];
-    if (list.length >= 2) {
-      const [a, b] = list;
-      gesture = {
-        type: 'pinch', o,
-        dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
-        angle: Math.atan2(b.y - a.y, b.x - a.x),
-        mu: (a.u + b.u) / 2, mv: (a.v + b.v) / 2,
-        scale: o.scale, rot: o.rot, x: o.x, y: o.y
-      };
-    } else if (list.length === 1) {
-      gesture = {type: 'drag', o, u: list[0].u, v: list[0].v, x: o.x, y: o.y};
-    } else gesture = null;
+  // Funcionan en el visor (modo imagen) y también en la ventana flotante.
+  function makeImageGestures(el, pickOverlay){
+    const pointers = new Map();
+    let gesture = null;
+    let activeOverlay = null;
+    const pointInfo = e => {
+      const r = el.getBoundingClientRect();
+      return {x: e.clientX, y: e.clientY, u: (e.clientX - r.left) / Math.max(1, r.width), v: (e.clientY - r.top) / Math.max(1, r.height)};
+    };
+    function startGesture(){
+      const o = activeOverlay;
+      const list = [...pointers.values()];
+      if (!o || !list.length) { gesture = null; return; }
+      if (list.length >= 2) {
+        const [a, b] = list;
+        gesture = {
+          type: 'pinch', o,
+          dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+          angle: Math.atan2(b.y - a.y, b.x - a.x),
+          mu: (a.u + b.u) / 2, mv: (a.v + b.v) / 2,
+          scale: o.scale, rot: o.rot, x: o.x, y: o.y
+        };
+      } else {
+        gesture = {type: 'drag', o, u: list[0].u, v: list[0].v, x: o.x, y: o.y};
+      }
+    }
+    el.addEventListener('pointerdown', e => {
+      if (S.exporting) return;
+      if (!pointers.size) {
+        activeOverlay = pickOverlay(e, pointInfo(e));
+        if (!activeOverlay) return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      pointers.set(e.pointerId, pointInfo(e));
+      try { el.setPointerCapture(e.pointerId); } catch (error) {}
+      startGesture();
+    });
+    el.addEventListener('pointermove', e => {
+      if (!pointers.has(e.pointerId)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pointers.set(e.pointerId, pointInfo(e));
+      if (!gesture) return;
+      const o = gesture.o;
+      const list = [...pointers.values()];
+      if (gesture.type === 'pinch' && list.length >= 2) {
+        const [a, b] = list;
+        const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const angle = Math.atan2(b.y - a.y, b.x - a.x);
+        o.scale = clamp(gesture.scale * dist / gesture.dist, 0.03, 4);
+        o.rot = gesture.rot + (angle - gesture.angle);
+        o.x = clamp(gesture.x + ((a.u + b.u) / 2 - gesture.mu), -0.25, 1.25);
+        o.y = clamp(gesture.y + ((a.v + b.v) / 2 - gesture.mv), -0.25, 1.25);
+      } else if (gesture.type === 'drag' && list.length === 1) {
+        o.x = clamp(gesture.x + (list[0].u - gesture.u), -0.25, 1.25);
+        o.y = clamp(gesture.y + (list[0].v - gesture.v), -0.25, 1.25);
+      }
+      B.requestDraw();
+    });
+    const endPointer = e => {
+      if (!pointers.has(e.pointerId)) return;
+      e.stopPropagation();
+      pointers.delete(e.pointerId);
+      if (!pointers.size) { activeOverlay = null; gesture = null; return; }
+      startGesture();
+    };
+    el.addEventListener('pointerup', endPointer);
+    el.addEventListener('pointercancel', endPointer);
+    ['click', 'dblclick'].forEach(type => el.addEventListener(type, e => { if (activeOverlay || el === editCanvas) e.stopPropagation(); }));
+    // Computadora: rueda o pellizco del trackpad para el tamaño; Mayús + rueda para girar.
+    el.addEventListener('wheel', e => {
+      const o = pickOverlay(e, pointInfo(e));
+      if (!o) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey || e.altKey) o.rot += (e.deltaY || e.deltaX) * 0.004;
+      else o.scale = clamp(o.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), 0.03, 4);
+      B.requestDraw();
+    }, {passive: false});
+    return {clear(){ pointers.clear(); gesture = null; activeOverlay = null; }};
   }
-  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'click', 'dblclick'].forEach(type => {
+
+  // En el visor (modo imagen) los gestos siempre mueven la imagen seleccionada.
+  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'].forEach(type => {
     editCanvas.addEventListener(type, e => e.stopPropagation());
   });
-  editCanvas.addEventListener('pointerdown', e => {
-    if (!selectedId) return;
-    e.preventDefault();
-    pointers.set(e.pointerId, pointInfo(e));
-    try { editCanvas.setPointerCapture(e.pointerId); } catch (error) {}
-    startGesture();
-  });
-  editCanvas.addEventListener('pointermove', e => {
-    if (!pointers.has(e.pointerId) || !gesture) return;
-    e.preventDefault();
-    pointers.set(e.pointerId, pointInfo(e));
-    const o = gesture.o;
-    const list = [...pointers.values()];
-    if (gesture.type === 'pinch' && list.length >= 2) {
-      const [a, b] = list;
-      const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const angle = Math.atan2(b.y - a.y, b.x - a.x);
-      o.scale = clamp(gesture.scale * dist / gesture.dist, 0.03, 4);
-      o.rot = gesture.rot + (angle - gesture.angle);
-      o.x = clamp(gesture.x + ((a.u + b.u) / 2 - gesture.mu), -0.25, 1.25);
-      o.y = clamp(gesture.y + ((a.v + b.v) / 2 - gesture.mv), -0.25, 1.25);
-    } else if (gesture.type === 'drag' && list.length === 1) {
-      o.x = clamp(gesture.x + (list[0].u - gesture.u), -0.25, 1.25);
-      o.y = clamp(gesture.y + (list[0].v - gesture.v), -0.25, 1.25);
+  const stageGestures = makeImageGestures(editCanvas, () => findOverlay(selectedId));
+
+  // En la ventana flotante: si el dedo toca una imagen, se edita la imagen;
+  // si toca fuera de ella, la ventana se mueve o cambia de tamaño como siempre.
+  function hitOverlay(info, el){
+    const r = el.getBoundingClientRect();
+    const W = Math.max(1, r.width), H = Math.max(1, r.height);
+    const t = B.currentProjectTime();
+    const list = S.overlays.slice().reverse();
+    const selected = findOverlay(selectedId);
+    if (selected) { list.splice(list.indexOf(selected), 1); list.unshift(selected); }
+    for (const o of list) {
+      const image = images.get(o.imageId);
+      if (!image) continue;
+      if (o.id !== selectedId && overlayAlpha(o, t) <= 0) continue;
+      const box = overlayBox(o, W, H);
+      const dx = info.u * W - box.cx, dy = info.v * H - box.cy;
+      const cos = Math.cos(-o.rot), sin = Math.sin(-o.rot);
+      const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
+      const pad = 10;
+      if (Math.abs(lx) <= box.iw / 2 + pad && Math.abs(ly) <= box.ih / 2 + pad) return o;
     }
-    B.requestDraw();
-  });
-  const endPointer = e => {
-    if (!pointers.has(e.pointerId)) return;
-    pointers.delete(e.pointerId);
-    startGesture();
-  };
-  editCanvas.addEventListener('pointerup', endPointer);
-  editCanvas.addEventListener('pointercancel', endPointer);
-  // Computadora: rueda o pellizco del trackpad para el tamaño; Mayús + rueda para girar.
-  editCanvas.addEventListener('wheel', e => {
-    const o = findOverlay(selectedId);
-    if (!o) return;
-    e.preventDefault();
-    if (e.shiftKey || e.altKey) o.rot += (e.deltaY || e.deltaX) * 0.004;
-    else o.scale = clamp(o.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), 0.03, 4);
-    B.requestDraw();
-  }, {passive: false});
+    return null;
+  }
+  const floatingCanvas = els.floatingCanvas || document.getElementById('floatingCanvas');
+  if (floatingCanvas) {
+    floatingCanvas.style.touchAction = 'none';
+    makeImageGestures(floatingCanvas, (e, info) => {
+      if (!S.floatingPreview) return null;
+      const o = hitOverlay(info, floatingCanvas);
+      if (o && o.id !== selectedId) enterEdit(o.id);
+      return o;
+    });
+  }
 
   // ---------- Línea de tiempo: segmentos ----------
   function renderTrack(){

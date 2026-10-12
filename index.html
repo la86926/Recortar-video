@@ -493,7 +493,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v2.0.1</small>`;
+      <small class="app-version">v2.0.2</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -568,7 +568,7 @@ window.RecorteBridge={
 };
 window.RecorteImagenesReady=new Promise(resolve=>{
   const script=document.createElement('script');
-  script.src='imagenes.js?v='+'2.0.1';
+  script.src='imagenes.js?v=2.0.2';
   script.onload=()=>resolve(window.RecorteImagenes||null);
   script.onerror=()=>resolve(null);
   document.head.appendChild(script);
