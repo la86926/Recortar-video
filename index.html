@@ -332,6 +332,19 @@ function onRecStop(){`;
   const newFlipButtons = `        <button class="btn tiny ghost" id="flipH" aria-label="Reflejar horizontalmente" title="Reflejar horizontalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(90 12 12)">${flipArrows}</g></svg></button>
         <button class="btn tiny ghost" id="flipV" aria-label="Reflejar verticalmente" title="Reflejar verticalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true">${flipArrows}</svg></button>`;
 
+  // Versión visible en la cabecera.
+  const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
+  const newBrandTitle = `<h1>Re<em>corte</em></h1>
+      <small class="app-version">v1.0</small>`;
+
+  // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
+  const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
+  const newFloatMinWidth = `  const minWidth=Math.min(window.innerWidth<=700?64:110,maxWidth);`;
+
+  // Aviso breve al mostrar la vista flotante.
+  const oldFloatShow = `    requestAnimationFrame(clampFloatingPreview);`;
+  const newFloatShow = `    requestAnimationFrame(()=>{ clampFloatingPreview(); showFloatingHint(); });`;
+
   // Nuevo icono para "Añadir video" (diseño enviado por el usuario).
   const oldAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 9 4-2v10l-4-2M7 12h6M10 9v6"/></svg>`;
   const newAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.06 1.97H6.66A4.69 4.69 0 0 0 1.97 6.66v10.68a4.69 4.69 0 0 0 4.69 4.69h10.68a4.69 4.69 0 0 0 4.69-4.69V9.94"/><circle cx="8.44" cy="8.44" r="2.44"/><path d="M1.97 14.06 4.69 16.03C7.03 17.72 8.91 17.34 10.78 15.61L13.59 13.03C15.47 11.25 17.81 10.41 20.16 11.72L22.03 13.13M18.98 1.97v6M15.98 4.97h6"/></svg>`;
@@ -377,6 +390,36 @@ function onRecStop(){`;
 })();`;
   const newScriptEnd = `  if(e.key==='ArrowRight'){ e.preventDefault(); stepProjectFrames(e.shiftKey?10:1); }
 });
+let floatingHintTimer=0;
+function hideFloatingHint(){
+  clearTimeout(floatingHintTimer);
+  const hint=document.getElementById('floatingHint');
+  if(hint) hint.classList.remove('show');
+  ['pointerdown','touchstart','touchmove','wheel','keydown','scroll'].forEach(type=>window.removeEventListener(type,hideFloatingHint,true));
+}
+function showFloatingHint(){
+  if(!S.floatingPreview) return;
+  let hint=document.getElementById('floatingHint');
+  if(!hint){
+    hint=document.createElement('div');
+    hint.id='floatingHint';
+    hint.className='floating-hint';
+    hint.setAttribute('role','status');
+    hint.textContent='Pellizca con dos dedos sobre la vista flotante para agrandarla o achicarla, y arrástrala con un dedo para moverla adonde mejor te quede.';
+    document.body.appendChild(hint);
+  }
+  const rect=els.floatingPreview.getBoundingClientRect();
+  hint.style.top=Math.min(window.innerHeight-120,rect.bottom+10)+'px';
+  hint.style.right=Math.max(10,window.innerWidth-rect.right)+'px';
+  hideFloatingHint();
+  hint.classList.add('show');
+  // Cualquier gesto del usuario lo quita al instante; nunca bloquea el desplazamiento.
+  setTimeout(()=>{
+    if(!hint.classList.contains('show')) return;
+    ['pointerdown','touchstart','touchmove','wheel','keydown','scroll'].forEach(type=>window.addEventListener(type,hideFloatingHint,{capture:true,passive:true}));
+  },250);
+  floatingHintTimer=setTimeout(hideFloatingHint,1500);
+}
 let fastExporterLoading=null;
 function loadFastExporter(){
   if(window.RecorteRapido) return Promise.resolve(window.RecorteRapido);
@@ -467,6 +510,28 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 /* Sin edición en curso: inactivo hasta elegir una proporción */
 #cropLock:disabled{animation:none;opacity:1;cursor:default;box-shadow:none !important;background:var(--surface) !important;color:var(--text-3,#8E8E93) !important;border-color:var(--line) !important}
 .frame-tools .flip-icon{width:22px;height:22px;display:block;margin:auto;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+/* Versión */
+.brand .app-version{
+  align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
+  font:650 10.5px var(--sans);letter-spacing:.02em;color:var(--text-3);white-space:nowrap
+}
+/* Vista flotante: la mitad de tamaño en el móvil */
+@media(max-width:700px){
+  .floating-preview{width:min(21vw,95px);padding:3px;border-radius:12px}
+  .floating-preview canvas{border-radius:9px}
+  .floating-close{top:4px;right:4px;width:20px;height:20px}
+  .floating-close::before,.floating-close::after{width:9px;height:1.5px}
+}
+/* Aviso de la vista flotante: no recibe toques, no estorba al desplazarse */
+.floating-hint{
+  position:fixed;z-index:46;max-width:min(250px,calc(100vw - 20px));padding:10px 13px;
+  border-radius:14px;background:rgba(28,28,30,.88);color:#FFFFFF;
+  font:550 13px/1.35 var(--sans);box-shadow:0 10px 30px rgba(0,0,0,.22);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  pointer-events:none;opacity:0;transform:translateY(-4px);
+  transition:opacity .18s ease,transform .18s ease
+}
+.floating-hint.show{opacity:1;transform:none}
 @keyframes crop-lock-attention{
   0%,100%{box-shadow:0 0 0 0 rgba(31,191,91,.08)}
   50%{box-shadow:0 0 0 5px rgba(31,191,91,.16)}
@@ -500,6 +565,9 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldBrandTitle, newBrandTitle, 'versión');
+    html = replaceExactlyOnce(html, oldFloatMinWidth, newFloatMinWidth, 'tamaño mínimo de la vista flotante');
+    html = replaceExactlyOnce(html, oldFloatShow, newFloatShow, 'aviso de la vista flotante');
     html = replaceExactlyOnce(html, oldCropLockClick, newCropLockClick, 'aceptar recorte');
     html = replaceExactlyOnce(html, oldLoadCrop, newLoadCrop, 'encuadre inicial');
     html = replaceExactlyOnce(html, oldFlipButtons, newFlipButtons, 'iconos de voltear');
