@@ -31,9 +31,9 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   const oldLockButton = `        <button class="icon-btn" id="cropLock" type="button" aria-pressed="false" aria-label="Confirmar encuadre" title="Confirmar encuadre">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
         </button>`;
-  const newLockButton = `        <button class="icon-btn crop-lock-control" id="cropLock" type="button" aria-pressed="false" aria-label="Bloquear recorte" title="Bloquear recorte">
+  const newLockButton = `        <button class="icon-btn crop-lock-control" id="cropLock" type="button" aria-pressed="true" aria-label="Aceptar recorte" title="Aceptar recorte" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="m8 12 3 3 5-6"/></svg>
-          <span class="crop-lock-label">Bloquear recorte</span>
+          <span class="crop-lock-label">Aceptar recorte</span>
         </button>`;
 
   const oldNotice = `function showEditNotice(message,type=''){
@@ -60,11 +60,12 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
   S.drag=null; S.stageTap=null; markHandle(null);
   els.stage.classList.toggle('crop-locked',S.cropLocked);
   els.cropLock.setAttribute('aria-pressed',String(S.cropLocked));
-  const label=S.cropLocked?'Desbloquear recorte':'Bloquear recorte';
+  // Solo se puede aceptar mientras se edita; para volver a editar se elige una proporción.
+  els.cropLock.disabled=S.cropLocked;
   const visibleLabel=els.cropLock.querySelector('.crop-lock-label');
-  if(visibleLabel) visibleLabel.textContent=S.cropLocked?'Recorte bloqueado':'Bloquear recorte';
-  els.cropLock.setAttribute('aria-label',label);
-  els.cropLock.title=label;
+  if(visibleLabel) visibleLabel.textContent='Aceptar recorte';
+  els.cropLock.setAttribute('aria-label','Aceptar recorte');
+  els.cropLock.title='Aceptar recorte';
 }`;
 
   const oldExportState = `  exportState:null, exportGain:null, exportMonitorDisconnected:false, exportElementVolume:null,
@@ -313,6 +314,24 @@ window.addEventListener('pagehide',interruptExportWhenHidden);
 window.addEventListener('pageshow',explainInterruptedExport);
 function onRecStop(){`;
 
+  // Aceptar recorte: el botón ya no alterna; bloquea el encuadre elegido.
+  const oldCropLockClick = `els.cropLock.addEventListener('click',()=>setCropLocked(!S.cropLocked));`;
+  const newCropLockClick = `els.cropLock.addEventListener('click',()=>{ if(!S.cropLocked) setCropLocked(true); });`;
+
+  // Al abrir un video: ninguna proporción activa, encuadre bloqueado sin rejilla y vista flotante activa.
+  const oldLoadCrop = `    S.crop={x:0,y:0,w:1,h:1}; S.ratio=null; S.ratioKey='free';
+    setCropLocked(false);`;
+  const newLoadCrop = `    S.crop={x:0,y:0,w:1,h:1}; S.ratio=null; S.ratioKey=null;
+    setCropLocked(true);
+    setFloatingPreview(true);`;
+
+  // Voltear: el mismo icono de flechas, girado 90° para el horizontal.
+  const flipArrows = '<path d="M8 19V5M4 9l4-4 4 4M16 5v14M12 15l4 4 4-4"/>';
+  const oldFlipButtons = `        <button class="btn tiny ghost" id="flipH" aria-label="Reflejar horizontalmente" title="Reflejar horizontalmente">⇄</button>
+        <button class="btn tiny ghost" id="flipV" aria-label="Reflejar verticalmente" title="Reflejar verticalmente">⇅</button>`;
+  const newFlipButtons = `        <button class="btn tiny ghost" id="flipH" aria-label="Reflejar horizontalmente" title="Reflejar horizontalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(90 12 12)">${flipArrows}</g></svg></button>
+        <button class="btn tiny ghost" id="flipV" aria-label="Reflejar verticalmente" title="Reflejar verticalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true">${flipArrows}</svg></button>`;
+
   // Nuevo icono para "Añadir video" (diseño enviado por el usuario).
   const oldAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 9 4-2v10l-4-2M7 12h6M10 9v6"/></svg>`;
   const newAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.06 1.97H6.66A4.69 4.69 0 0 0 1.97 6.66v10.68a4.69 4.69 0 0 0 4.69 4.69h10.68a4.69 4.69 0 0 0 4.69-4.69V9.94"/><circle cx="8.44" cy="8.44" r="2.44"/><path d="M1.97 14.06 4.69 16.03C7.03 17.72 8.91 17.34 10.78 15.61L13.59 13.03C15.47 11.25 17.81 10.41 20.16 11.72L22.03 13.13M18.98 1.97v6M15.98 4.97h6"/></svg>`;
@@ -425,10 +444,9 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
   align-items:center;
   justify-content:center;
   gap:8px;
-  background:var(--brand-soft);
-  color:var(--ink);
-  border-color:var(--brand-line);
-  animation:crop-lock-attention 1.8s ease-in-out infinite;
+  background:var(--surface);
+  color:var(--text-3,#8E8E93);
+  border-color:var(--line);
 }
 .stage-toolbar .crop-lock-control svg{width:21px;height:21px;flex:0 0 auto}
 .stage-toolbar .crop-lock-label{
@@ -438,17 +456,17 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
   font:700 13.5px var(--sans);
 }
 .stage-toolbar #floatPreviewToggle{grid-column:2;width:48px}
-#cropLock[aria-pressed="true"]{
-  animation:none;
+/* Mientras se elige el recorte: botón verde que invita a aceptarlo */
+#cropLock:not(:disabled){
   border-color:transparent;
   background:var(--action);
   color:#FFFFFF;
   box-shadow:0 3px 10px rgba(31,191,91,.20);
+  animation:crop-lock-attention 1.8s ease-in-out infinite;
 }
-html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
-  background:rgba(31,191,91,.14);
-  color:#8EE5AD;
-}
+/* Sin edición en curso: inactivo hasta elegir una proporción */
+#cropLock:disabled{animation:none;opacity:1;cursor:default;box-shadow:none !important;background:var(--surface) !important;color:var(--text-3,#8E8E93) !important;border-color:var(--line) !important}
+.frame-tools .flip-icon{width:22px;height:22px;display:block;margin:auto;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
 @keyframes crop-lock-attention{
   0%,100%{box-shadow:0 0 0 0 rgba(31,191,91,.08)}
   50%{box-shadow:0 0 0 5px rgba(31,191,91,.16)}
@@ -482,6 +500,9 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldCropLockClick, newCropLockClick, 'aceptar recorte');
+    html = replaceExactlyOnce(html, oldLoadCrop, newLoadCrop, 'encuadre inicial');
+    html = replaceExactlyOnce(html, oldFlipButtons, newFlipButtons, 'iconos de voltear');
     html = replaceExactlyOnce(html, oldAddVideoIcon, newAddVideoIcon, 'icono de añadir video');
     html = replaceExactlyOnce(html, oldNewProjectButton, newNewProjectButton, 'botón de nuevo proyecto');
     html = replaceExactlyOnce(html, oldNewProjectHandler, newNewProjectHandler, 'acción de nuevo proyecto');
