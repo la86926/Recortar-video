@@ -275,6 +275,42 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
 `;
   const newRecorderResume = ``;
 
+  // Si la exportación se interrumpe (otra app, otra pestaña, pantalla bloqueada) el navegador
+  // detiene el dibujado pero el video y la grabación siguen: el archivo saldría distinto al proyecto.
+  const oldExportGuard = `  const stream=cvs.captureStream(fps);
+  const exportVideoTrack=`;
+  const newExportGuard = `  if(!S.exporting||!S.exportState) return;
+  const stream=cvs.captureStream(fps);
+  const exportVideoTrack=`;
+
+  const oldTickDraw = `  drawComposite(ex.ctx,ex.output.w,ex.output.h);
+  const current=Math.min(clip.end,Math.max(clip.start,v.currentTime));`;
+  const newTickDraw = `  const pastClipEnd=clip.reversed?v.currentTime<=clip.start+0.004:(v.currentTime>=clip.end-0.004||v.ended);
+  if(!pastClipEnd) drawComposite(ex.ctx,ex.output.w,ex.output.h);
+  const current=Math.min(clip.end,Math.max(clip.start,v.currentTime));`;
+
+  const oldTickStatus = `  els.st.textContent=Math.round(p*100)+'% · quedan ~'+fmt(Math.max(0,ex.total-elapsed));`;
+  const newTickStatus = `  els.st.textContent=Math.round(p*100)+'% · quedan ~'+fmt(Math.max(0,ex.total-elapsed))+' · no salgas de esta pantalla';`;
+
+  const oldRecStop = `function onRecStop(){`;
+  const newRecStop = `function interruptExportWhenHidden(){
+  if(!S.exporting||S.exportKind!=='mp4') return;
+  S.exportInterrupted=true;
+  finishExport(true);
+}
+function explainInterruptedExport(){
+  if(!S.exportInterrupted||document.visibilityState==='hidden') return;
+  S.exportInterrupted=false;
+  setTimeout(()=>alert('La exportación se detuvo porque saliste de esta pantalla. Vuelve a exportar y espera aquí hasta que termine.'),0);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden') interruptExportWhenHidden();
+  else explainInterruptedExport();
+});
+window.addEventListener('pagehide',interruptExportWhenHidden);
+window.addEventListener('pageshow',explainInterruptedExport);
+function onRecStop(){`;
+
   const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
 .edit-toast{display:none !important}
 .stage{
@@ -368,6 +404,10 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldRecorderStart, newRecorderStart, 'inicio sincronizado de la grabación');
     html = replaceExactlyOnce(html, oldRecorderPause, newRecorderPause, 'cambio entre recortes sin pausar MP4');
     html = replaceExactlyOnce(html, oldRecorderResume, newRecorderResume, 'reanudación MP4 innecesaria');
+    html = replaceExactlyOnce(html, oldExportGuard, newExportGuard, 'exportación cancelada antes de grabar');
+    html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
+    html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
+    html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
     html = replaceExactlyOnce(html, '@media (max-width:430px){', cssOverride + '@media (max-width:430px){', 'estilos');
     return html;
   }
