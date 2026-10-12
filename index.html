@@ -313,6 +313,21 @@ window.addEventListener('pagehide',interruptExportWhenHidden);
 window.addEventListener('pageshow',explainInterruptedExport);
 function onRecStop(){`;
 
+  // Nuevo icono para "Añadir video" (diseño enviado por el usuario).
+  const oldAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 9 4-2v10l-4-2M7 12h6M10 9v6"/></svg>`;
+  const newAddVideoIcon = `          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.06 1.97H6.66A4.69 4.69 0 0 0 1.97 6.66v10.68a4.69 4.69 0 0 0 4.69 4.69h10.68a4.69 4.69 0 0 0 4.69-4.69V9.94"/><circle cx="8.44" cy="8.44" r="2.44"/><path d="M1.97 14.06 4.69 16.03C7.03 17.72 8.91 17.34 10.78 15.61L13.59 13.03C15.47 11.25 17.81 10.41 20.16 11.72L22.03 13.13M18.98 1.97v6M15.98 4.97h6"/></svg>`;
+
+  // Se quita el botón "Nuevo proyecto": basta con actualizar la página.
+  const oldNewProjectButton = `
+        <button class="icon-btn" id="pick2" type="button" aria-label="Comenzar otro proyecto" title="Nuevo proyecto">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h10l4 4v12H4zM14 4v5h5M8 14h6M11 11v6"/></svg>
+        </button>`;
+  const newNewProjectButton = ``;
+  const oldNewProjectHandler = `$('#pick2').addEventListener('click',()=>{ els.file.value=''; els.file.click(); });`;
+  const newNewProjectHandler = ``;
+  const oldToolbarColumns = `grid-template-columns:repeat(9,minmax(44px,1fr))`;
+  const newToolbarColumns = `grid-template-columns:repeat(8,minmax(44px,1fr))`;
+
   // Exportación rápida: procesa el archivo directamente, sin reproducirlo en tiempo real.
   // Si el navegador no la admite, se usa la grabación en tiempo real como respaldo.
   const oldExportEntry = `  if(S.projectFormat==='gif'){ await startGifExport(); return; }
@@ -467,6 +482,10 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldAddVideoIcon, newAddVideoIcon, 'icono de añadir video');
+    html = replaceExactlyOnce(html, oldNewProjectButton, newNewProjectButton, 'botón de nuevo proyecto');
+    html = replaceExactlyOnce(html, oldNewProjectHandler, newNewProjectHandler, 'acción de nuevo proyecto');
+    html = replaceExactlyOnce(html, oldToolbarColumns, newToolbarColumns, 'columnas de herramientas');
     html = replaceExactlyOnce(html, oldExportEntry, newExportEntry, 'exportación rápida');
     html = replaceExactlyOnce(html, oldCancel, newCancel, 'cancelar exportación rápida');
     html = replaceExactlyOnce(html, oldPickMime, newPickMime, 'formatos de respaldo');
