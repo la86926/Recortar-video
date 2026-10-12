@@ -267,7 +267,7 @@
       S.fastExportCancelled = false;
       els.exportBtn.disabled = false;
       els.saveFrame.disabled = false;
-      els.exportBtn.textContent = 'Exportar proyecto';
+      els.exportBtn.textContent = 'Exportar video';
       els.cancelBtn.classList.add('hidden');
       els.prog.style.display = 'none';
       els.st.style.display = 'none';
@@ -341,6 +341,7 @@
             const frameEnd = Math.min(length, frame.timestamp + duration - clip.start);
             if (frameEnd <= frameStart) continue;
             drawFrame(ctx, frame.canvas, S, out, alphaAt(frame.timestamp));
+            if (app.drawOverlays) app.drawOverlays(ctx, out.w, out.h, outputTime + frameStart);
             await videoSource.add(outputTime + frameStart, frameEnd - frameStart);
           }
         };
@@ -363,7 +364,9 @@
               if (!frame) continue;
               const copy = document.createElement('canvas');
               copy.width = out.w; copy.height = out.h;
-              drawFrame(copy.getContext('2d', {alpha: false}), frame.canvas, S, out, alphaAt(clip.end - k * step));
+              const copyCtx = copy.getContext('2d', {alpha: false});
+              drawFrame(copyCtx, frame.canvas, S, out, alphaAt(clip.end - k * step));
+              if (app.drawOverlays) app.drawOverlays(copyCtx, out.w, out.h, outputTime + k * step);
               composed.set(k, copy);
             }
             for (const k of indexes) {
@@ -449,5 +452,211 @@
     }
   }
 
-  window.RecorteRapido = {exportar};
+
+  // ===== Exportar solo el audio del proyecto (M4A/AAC; WAV como respaldo) =====
+  function lastBufferEnd(queue){
+    const b = queue[queue.length - 1];
+    return b ? b.timestamp + b.buffer.length / b.buffer.sampleRate : -Infinity;
+  }
+
+  async function renderPlanAudio(plan, sinkFor, gainFor, onWindow, cancelled, progress){
+    let outputTime = 0, audioFrames = 0;
+    for (const clip of plan) {
+      if (cancelled()) return false;
+      const length = clip.end - clip.start;
+      const sink = clip.reversed ? null : sinkFor(clip.sourceId);
+      const iterator = sink ? sink.buffers(clip.start, clip.end)[Symbol.asyncIterator]() : null;
+      let queue = [], done = false;
+      const gainAt = gainFor(clip);
+      const endFrame = Math.round((outputTime + length) * AUDIO_RATE);
+      for (let windowStart = 0; windowStart < length - 1e-9; windowStart += WINDOW_SECONDS) {
+        if (cancelled()) return false;
+        const windowEnd = Math.min(length, windowStart + WINDOW_SECONDS);
+        const target = windowEnd >= length ? endFrame : Math.round((outputTime + windowEnd) * AUDIO_RATE);
+        const frames = target - audioFrames;
+        if (frames <= 0) continue;
+        const data = new Float32Array(frames * AUDIO_CHANNELS);
+        const left = data.subarray(0, frames), right = data.subarray(frames);
+        if (iterator) {
+          const from = clip.start + (audioFrames / AUDIO_RATE - outputTime);
+          const to = from + frames / AUDIO_RATE;
+          while (!done && lastBufferEnd(queue) < to) {
+            const next = await iterator.next();
+            if (next.done) { done = true; break; }
+            queue.push(next.value);
+          }
+          for (const wrapped of queue) mixAudioBuffer(wrapped, from, frames, left, right, gainAt);
+          queue = queue.filter(b => b.timestamp + b.buffer.length / b.buffer.sampleRate > to);
+        }
+        await onWindow(data, frames, audioFrames);
+        audioFrames = target;
+        progress(outputTime + windowEnd);
+      }
+      if (iterator && iterator.return) { try { await iterator.return(); } catch (error) {} }
+      outputTime += length;
+    }
+    return true;
+  }
+
+  function wavHeader(totalFrames){
+    const blockAlign = AUDIO_CHANNELS * 2, dataSize = totalFrames * blockAlign;
+    const view = new DataView(new ArrayBuffer(44));
+    const text = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+    text(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); text(8, 'WAVE');
+    text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, AUDIO_CHANNELS, true); view.setUint32(24, AUDIO_RATE, true);
+    view.setUint32(28, AUDIO_RATE * blockAlign, true); view.setUint16(32, blockAlign, true); view.setUint16(34, 16, true);
+    text(36, 'data'); view.setUint32(40, dataSize, true);
+    return view.buffer;
+  }
+
+  function toInt16(data, frames){
+    const out = new Int16Array(frames * AUDIO_CHANNELS);
+    for (let i = 0; i < frames; i++) {
+      for (let ch = 0; ch < AUDIO_CHANNELS; ch++) {
+        const v = clamp(data[ch * frames + i], -1, 1);
+        out[i * AUDIO_CHANNELS + ch] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      }
+    }
+    return out;
+  }
+
+  async function exportarAudio(app){
+    const {S, els} = app;
+    if (S.exporting) return true;
+    const plan = app.buildExportPlan().filter(clip => clip.end - clip.start > 0.0005);
+    if (!plan.length) return true;
+    const sourceIds = [...new Set(plan.map(clip => clip.sourceId))];
+    const sources = sourceIds.map(id => app.sourceById(id));
+    if (sources.some(source => !source || !source.file)) { alert('No se pudo leer el video.'); return true; }
+    const total = plan.reduce((sum, clip) => sum + (clip.end - clip.start), 0);
+
+    let wakeLock = null;
+    S.exporting = true;
+    S.exportKind = 'fast';
+    S.fastExportCancelled = false;
+    try { els.video.pause(); } catch (error) {}
+    els.exportBtn.disabled = true;
+    els.saveFrame.disabled = true;
+    els.exportBtn.textContent = 'Exportando…';
+    els.cancelBtn.classList.remove('hidden');
+    els.prog.style.display = 'block';
+    els.st.style.display = 'block';
+    els.result.classList.add('hidden');
+    els.prog.firstElementChild.style.width = '0%';
+    els.st.textContent = 'Preparando…';
+    try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (error) {}
+    const restoreUi = () => {
+      S.exporting = false;
+      S.exportKind = null;
+      S.fastExportCancelled = false;
+      els.exportBtn.disabled = false;
+      els.saveFrame.disabled = false;
+      els.exportBtn.textContent = 'Exportar video';
+      els.cancelBtn.classList.add('hidden');
+      els.prog.style.display = 'none';
+      els.st.style.display = 'none';
+      els.prog.firstElementChild.style.width = '0%';
+      if (wakeLock) { try { wakeLock.release(); } catch (error) {} wakeLock = null; }
+    };
+    const cancelled = () => !!S.fastExportCancelled;
+    const startedAt = performance.now();
+    const progress = done => {
+      const p = total ? clamp(done / total, 0, 1) : 1;
+      els.prog.firstElementChild.style.width = (p * 100).toFixed(1) + '%';
+      const elapsed = (performance.now() - startedAt) / 1000;
+      let text = Math.round(p * 100) + '%';
+      if (p > 0.03 && p < 1) text += ' · quedan ~' + app.fmt(Math.max(0, elapsed / p - elapsed));
+      els.st.textContent = text;
+    };
+    const gainFor = clip => {
+      const fade = !!((clip.fadeAudioIn || 0) || (clip.fadeAudioOut || 0));
+      return time => AUDIO_GAIN * (fade ? app.fadeFactor(clip, time, 'audio') : 1);
+    };
+    const NO_AUDIO = 'sin-audio';
+
+    // Opción principal: AAC en M4A con Mediabunny.
+    const viaMediabunny = async () => {
+      const MB = await loadLibrary();
+      const inputs = [];
+      const sinks = new Map();
+      try {
+        let anyAudio = false;
+        for (const source of sources) {
+          const input = new MB.Input({source: new MB.BlobSource(source.file), formats: MB.ALL_FORMATS});
+          inputs.push(input);
+          const track = await input.getPrimaryAudioTrack();
+          if (!track) { sinks.set(source.id, null); continue; }
+          anyAudio = true;
+          if (await track.canDecode()) sinks.set(source.id, new MB.AudioBufferSink(track));
+          else {
+            const decoded = await decodeWithWebAudio(source.file);
+            sinks.set(source.id, decoded ? decodedSink(decoded) : null);
+          }
+        }
+        if (!anyAudio) throw new Error(NO_AUDIO);
+        if (!(await ensureAac(MB))) throw new Error('AAC no disponible');
+        const collector = createCollector();
+        const output = new MB.Output({format: new MB.Mp4OutputFormat(), target: new MB.StreamTarget(collector.writable, {chunked: true})});
+        const audioSource = new MB.AudioSampleSource({codec: 'aac', bitrate: 192000});
+        output.addAudioTrack(audioSource);
+        await output.start();
+        const ok = await renderPlanAudio(plan, id => sinks.get(id), gainFor, async (data, frames, at) => {
+          const sample = new MB.AudioSample({data, format: 'f32-planar', numberOfChannels: AUDIO_CHANNELS, sampleRate: AUDIO_RATE, timestamp: at / AUDIO_RATE});
+          await audioSource.add(sample);
+          sample.close();
+        }, cancelled, progress);
+        if (!ok) { try { await output.cancel(); } catch (error) {} return null; }
+        els.st.textContent = 'Guardando…';
+        await output.finalize();
+        return {blob: collector.toBlob('audio/mp4'), type: 'audio/mp4', ext: 'm4a'};
+      } finally {
+        inputs.forEach(input => { try { input.dispose(); } catch (error) {} });
+      }
+    };
+
+    // Respaldo: WAV con Web Audio (navegadores sin WebCodecs).
+    const viaWav = async () => {
+      const sinks = new Map();
+      let anyAudio = false;
+      for (const source of sources) {
+        const decoded = await decodeWithWebAudio(source.file);
+        sinks.set(source.id, decoded ? decodedSink(decoded) : null);
+        if (decoded) anyAudio = true;
+      }
+      if (!anyAudio) throw new Error(NO_AUDIO);
+      const parts = [];
+      let written = 0;
+      const ok = await renderPlanAudio(plan, id => sinks.get(id), gainFor, async (data, frames) => {
+        parts.push(toInt16(data, frames));
+        written += frames;
+      }, cancelled, progress);
+      if (!ok) return null;
+      return {blob: new Blob([wavHeader(written), ...parts], {type: 'audio/wav'}), type: 'audio/wav', ext: 'wav'};
+    };
+
+    try {
+      let result = null;
+      try { result = await viaMediabunny(); }
+      catch (error) {
+        if (error && error.message === NO_AUDIO) throw error;
+        if (cancelled()) { restoreUi(); return true; }
+        console.warn('Se usará WAV para el audio.', error);
+        progress(0);
+        result = await viaWav();
+      }
+      if (cancelled() || !result) { restoreUi(); return true; }
+      restoreUi();
+      app.setExportResult(result.blob, result.type, result.ext, {output: {w: 0, h: 0}});
+      els.outMeta.textContent = 'Audio · ' + (result.blob.size / 1048576).toFixed(1) + ' MB · ' + result.ext.toUpperCase();
+      return true;
+    } catch (error) {
+      restoreUi();
+      if (error && error.message === NO_AUDIO) alert('Este video no tiene audio.');
+      else { console.error('No se pudo exportar el audio.', error); alert('No se pudo exportar el audio en este navegador.'); }
+      return true;
+    }
+  }
+
+  window.RecorteRapido = {exportar, exportarAudio};
 })();

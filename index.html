@@ -400,6 +400,19 @@ function startCurrentPlayback(){`;
     if(S.pendingPlay){ S.pendingPlay=0; setPlaybackUI(false); }
     else startCurrentPlayback();`;
 
+  // Imágenes sobre el video: se dibujan en cada vista y en la exportación.
+  const oldCompositeEnd = `  try{ ctx.drawImage(v, sx,sy,sw,sh, -dw/2,-dh/2, dw,dh); }catch(e){}
+  ctx.restore();
+}`;
+  const newCompositeEnd = `  try{ ctx.drawImage(v, sx,sy,sw,sh, -dw/2,-dh/2, dw,dh); }catch(e){}
+  ctx.restore();
+  drawOverlays(ctx,cw,chh,overlayTimeNow());
+}`;
+  // Botón de exportar partido en dos: audio | video.
+  const oldExportButton = `      <button class="btn primary" id="exportBtn" style="flex:1">Exportar proyecto</button>`;
+  const newExportButton = `      <button class="btn primary" id="exportAudioBtn" type="button" style="flex:1">Exportar audio</button>
+      <button class="btn primary" id="exportBtn" style="flex:1">Exportar video</button>`;
+
   // Fluidez al reproducir: menos trabajo por fotograma y sin competir con el video.
   const oldPreviewCanvasSize = `  if(els.out.width!==o.w||els.out.height!==o.h){ els.out.width=o.w; els.out.height=o.h; }`;
   const newPreviewCanvasSize = `  const previewScale=Math.min(1,1280/Math.max(o.w,o.h));
@@ -480,7 +493,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v1.0.7</small>`;
+      <small class="app-version">v2.0.0</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -503,7 +516,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   const oldNewProjectHandler = `$('#pick2').addEventListener('click',()=>{ els.file.value=''; els.file.click(); });`;
   const newNewProjectHandler = ``;
   const oldToolbarColumns = `grid-template-columns:repeat(9,minmax(44px,1fr))`;
-  const newToolbarColumns = `grid-template-columns:repeat(8,minmax(44px,1fr))`;
+  const newToolbarColumns = `grid-template-columns:repeat(9,minmax(44px,1fr))`;
 
   // Exportación rápida: procesa el archivo directamente, sin reproducirlo en tiempo real.
   // Si el navegador no la admite, se usa la grabación en tiempo real como respaldo.
@@ -535,6 +548,50 @@ bindFrameStepRepeat(els.stepForward,1);`;
 })();`;
   const newScriptEnd = `  if(e.key==='ArrowRight'){ e.preventDefault(); stepProjectFrames(e.shiftKey?10:1); }
 });
+function overlayTimeNow(){
+  if(S.exporting&&S.exportState&&S.exportState.plan){
+    const ex=S.exportState, plan=ex.plan, index=Math.min(ex.index||0,plan.length-1);
+    let offset=0;
+    for(let i=0;i<index;i++) offset+=clipDuration(plan[i]);
+    const clip=plan[index]; if(!clip) return 0;
+    const local=clip.reversed?clip.end-els.video.currentTime:els.video.currentTime-clip.start;
+    return offset+Math.min(clipDuration(clip),Math.max(0,local));
+  }
+  return currentProjectTime();
+}
+function drawOverlays(ctx,w,h,t){
+  if(window.RecorteImagenes) window.RecorteImagenes.draw(ctx,w,h,t);
+}
+window.RecorteBridge={
+  S,els,drawComposite,currentProjectTime,projectDuration,outSize,syncCrop,
+  requestDraw:()=>{ needsDraw=true; }
+};
+window.RecorteImagenesReady=new Promise(resolve=>{
+  const script=document.createElement('script');
+  script.src='imagenes.js?v='+'2.0.0';
+  script.onload=()=>resolve(window.RecorteImagenes||null);
+  script.onerror=()=>resolve(null);
+  document.head.appendChild(script);
+});
+const exportAudioBtn=document.getElementById('exportAudioBtn');
+if(exportAudioBtn){
+  exportAudioBtn.addEventListener('click',async()=>{
+    if(S.exporting||!S.clips.length) return;
+    try{
+      const exporter=await loadFastExporter();
+      await exporter.exportarAudio({S,els,buildExportPlan,sourceById,fadeFactor,setExportResult,fmt});
+    }catch(error){
+      console.error(error);
+      S.exporting=false; S.exportKind=null;
+      alert('No se pudo exportar el audio en este navegador.');
+    }
+  });
+  (function syncAudioButton(){
+    const busy=!!S.exporting;
+    if(exportAudioBtn.classList.contains('hidden')!==busy) exportAudioBtn.classList.toggle('hidden',busy);
+    requestAnimationFrame(syncAudioButton);
+  })();
+}
 let floatingHintTimer=0;
 function hideFloatingHint(){
   clearTimeout(floatingHintTimer);
@@ -579,7 +636,7 @@ function loadFastExporter(){
 async function tryFastExport(){
   try{
     const exporter=await loadFastExporter();
-    return await exporter.exportar({S,els,buildExportPlan,sourceById,projectExportSize,fadeFactor,setExportResult,fmt});
+    return await exporter.exportar({S,els,buildExportPlan,sourceById,projectExportSize,fadeFactor,setExportResult,fmt,drawOverlays});
   }catch(error){
     console.warn('Se usará la exportación en tiempo real.',error);
     S.exporting=false; S.exportKind=null;
@@ -625,7 +682,8 @@ function projectStateForSave(){
     rot:S.rot, flipH:S.flipH, flipV:S.flipV,
     projectName:S.projectName, projectFormat:S.projectFormat,
     customW:els.cw.value, customH:els.ch.value,
-    floating:S.floatingPreview, keepAudio:els.keepAudio.checked
+    floating:S.floatingPreview, keepAudio:els.keepAudio.checked,
+    images:window.RecorteImagenes?window.RecorteImagenes.exportState():null
   };
 }
 async function saveProjectNow(force){
@@ -635,13 +693,14 @@ async function saveProjectNow(force){
   if(!state) return;
   saveBusy=true;
   try{
-    for(const source of S.sources){
+    const fileItems=S.sources.map(source=>({id:source.id,file:source.file})).concat(window.RecorteImagenes?window.RecorteImagenes.files():[]);
+    for(const item of fileItems){
       if(force===true) break;
-      if(savedFileIds.has(source.id)||!source.file) continue;
-      await saveStore('files','readwrite',store=>store.put(source.file,source.id));
-      savedFileIds.add(source.id);
+      if(savedFileIds.has(item.id)||!item.file) continue;
+      await saveStore('files','readwrite',store=>store.put(item.file,item.id));
+      savedFileIds.add(item.id);
     }
-    const current=new Set(S.sources.map(source=>source.id));
+    const current=new Set(fileItems.map(item=>item.id));
     for(const id of [...savedFileIds]){
       if(force===true) break;
       if(current.has(id)) continue;
@@ -694,9 +753,13 @@ async function restoreSavedProject(){
     els.customRow.style.display=S.ratioKey==='custom'?'flex':'none';
     if(typeof state.keepAudio==='boolean') els.keepAudio.checked=state.keepAudio;
     setCropLocked(state.cropLocked!==false);
+    if(state.images&&window.RecorteImagenesReady){
+      const imagesApi=await window.RecorteImagenesReady;
+      if(imagesApi) await imagesApi.importState(state.images,id=>saveStore('files','readonly',store=>store.get(id)));
+    }
     const located=locateProjectTime(state.time||0);
     await activateClip(located?located.index:0,{seek:located?located.sourceTime:null});
-    savedFileIds=new Set(sources.map(source=>source.id));
+    savedFileIds=new Set(sources.map(source=>source.id).concat(state.images&&state.images.images?state.images.images.map(image=>image.id):[]));
     lastSavedState=json;
     if(state.floating!==false){ suppressFloatingHintOnce=true; setFloatingPreview(true); }
   }catch(error){
@@ -839,6 +902,39 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .brand{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .brand:focus-visible{outline:3px solid rgba(31,191,91,.45);outline-offset:4px;border-radius:12px}
 #resetDialog .btn.primary{background:var(--action) !important;color:#FFFFFF !important}
+/* Exportar audio | Exportar video */
+#bar .inner > div:last-child{gap:10px !important}
+/* Barra de herramientas: 9 botones; en el móvil, dos filas (5 + 4) */
+@media(max-width:520px){ .editor-toolbar{grid-template-columns:repeat(5,1fr) !important} }
+/* Línea de tiempo de imágenes */
+.overlay-track{position:relative;height:34px;margin:0 0 6px;border-radius:11px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line)}
+.overlay-track.hidden{display:none}
+.overlay-content{position:relative;height:100%;min-width:100%;will-change:transform}
+.overlay-seg{
+  position:absolute;top:3px;bottom:3px;min-width:18px;border-radius:9px;overflow:hidden;
+  background:#2A8CFF center/cover no-repeat;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55);
+  touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none
+}
+.overlay-seg::before{content:"";position:absolute;inset:0;background:rgba(10,60,140,.45)}
+.overlay-seg.selected{box-shadow:inset 0 0 0 2.5px #FFFFFF,0 0 0 2px rgba(42,140,255,.55)}
+.overlay-seg .ov-handle{position:absolute;top:0;bottom:0;width:16px;z-index:2;cursor:ew-resize;display:flex;align-items:center;justify-content:center}
+.overlay-seg .ov-handle::after{content:"";width:3px;height:14px;border-radius:2px;background:#FFFFFF;box-shadow:0 0 3px rgba(0,0,0,.4)}
+.overlay-seg .ov-handle.l{left:0}
+.overlay-seg .ov-handle.r{right:0}
+.overlay-seg .ov-fade{position:absolute;top:0;bottom:0;z-index:1;pointer-events:none}
+.overlay-seg .ov-fade.in{left:0;background:linear-gradient(90deg,rgba(0,0,0,.55),rgba(0,0,0,0))}
+.overlay-seg .ov-fade.out{right:0;background:linear-gradient(270deg,rgba(0,0,0,.55),rgba(0,0,0,0))}
+/* Visor en modo imagen */
+.image-edit-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;z-index:6;touch-action:none;border-radius:inherit}
+.stage.image-mode .image-edit-canvas{display:block}
+.stage.image-mode video,.stage.image-mode .shade,.stage.image-mode .badge{opacity:0 !important;pointer-events:none !important}
+/* Controles de la imagen: esquinas redondeadas */
+.image-tools{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 10px;border-radius:16px;background:var(--surface-2);border:1px solid var(--line)}
+.image-tools.hidden{display:none}
+.image-tools-icon svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.image-tools .image-radius{flex:1;min-width:0;accent-color:var(--action)}
+.image-tools .image-delete{flex:0 0 42px;width:42px;min-height:42px;color:#E23D3D}
+.image-tools .image-done{flex:0 0 auto;min-height:42px;padding:0 16px}
 /* Versión */
 .brand .app-version{
   align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
@@ -894,6 +990,9 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldCompositeEnd, newCompositeEnd, 'imágenes en el video');
+    html = replaceExactlyOnce(html, oldExportButton, newExportButton, 'botones de exportar');
+    html = html.split("textContent='Exportar proyecto'").join("textContent='Exportar video'");
     html = replaceExactlyOnce(html, oldPlayStartAudio, newPlayStartAudio, 'audio de la vista previa al reproducir');
     html = replaceExactlyOnce(html, oldPlayEventAudio, newPlayEventAudio, 'audio de la vista previa');
     html = replaceExactlyOnce(html, oldStartPlayback, newStartPlayback, 'reproducir cuando el video esté listo');
