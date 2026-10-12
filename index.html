@@ -332,6 +332,10 @@ function onRecStop(){`;
   const newFlipButtons = `        <button class="btn tiny ghost" id="flipH" aria-label="Reflejar horizontalmente" title="Reflejar horizontalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(90 12 12)">${flipArrows}</g></svg></button>
         <button class="btn tiny ghost" id="flipV" aria-label="Reflejar verticalmente" title="Reflejar verticalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true">${flipArrows}</svg></button>`;
 
+  // Nuevo icono de la vista flotante (diseño enviado por el usuario).
+  const oldFloatIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><rect x="12" y="7" width="6" height="5" rx="1"/><path d="M7 16h5"/></svg>`;
+  const newFloatIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1.5"/></svg>`;
+
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
@@ -395,7 +399,7 @@ function hideFloatingHint(){
   clearTimeout(floatingHintTimer);
   const hint=document.getElementById('floatingHint');
   if(hint) hint.classList.remove('show');
-  ['pointerdown','touchstart','touchmove','wheel','keydown','scroll'].forEach(type=>window.removeEventListener(type,hideFloatingHint,true));
+  ['pointerdown','touchstart','touchmove','wheel','keydown'].forEach(type=>window.removeEventListener(type,hideFloatingHint,true));
 }
 function showFloatingHint(){
   if(!S.floatingPreview) return;
@@ -405,7 +409,7 @@ function showFloatingHint(){
     hint.id='floatingHint';
     hint.className='floating-hint';
     hint.setAttribute('role','status');
-    hint.textContent='Pellizca con dos dedos sobre la vista flotante para agrandarla o achicarla, y arrástrala con un dedo para moverla adonde mejor te quede.';
+    hint.textContent='Ajusta su tamaño con dos dedos';
     document.body.appendChild(hint);
   }
   const rect=els.floatingPreview.getBoundingClientRect();
@@ -416,9 +420,9 @@ function showFloatingHint(){
   // Cualquier gesto del usuario lo quita al instante; nunca bloquea el desplazamiento.
   setTimeout(()=>{
     if(!hint.classList.contains('show')) return;
-    ['pointerdown','touchstart','touchmove','wheel','keydown','scroll'].forEach(type=>window.addEventListener(type,hideFloatingHint,{capture:true,passive:true}));
+    ['pointerdown','touchstart','touchmove','wheel','keydown'].forEach(type=>window.addEventListener(type,hideFloatingHint,{capture:true,passive:true}));
   },250);
-  floatingHintTimer=setTimeout(hideFloatingHint,1500);
+  floatingHintTimer=setTimeout(hideFloatingHint,2000);
 }
 let fastExporterLoading=null;
 function loadFastExporter(){
@@ -565,6 +569,7 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldFloatIcon, newFloatIcon, 'icono de la vista flotante');
     html = replaceExactlyOnce(html, oldBrandTitle, newBrandTitle, 'versión');
     html = replaceExactlyOnce(html, oldFloatMinWidth, newFloatMinWidth, 'tamaño mínimo de la vista flotante');
     html = replaceExactlyOnce(html, oldFloatShow, newFloatShow, 'aviso de la vista flotante');
