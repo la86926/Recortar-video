@@ -117,7 +117,12 @@
   const card = document.createElement('section');
   card.className = 'card image-card hidden';
   card.innerHTML =
-    '<h2>Imagen <span class="r image-card-name"></span></h2>' +
+    '<h2>Imagen <span class="r image-card-name"></span>' +
+      '<button class="image-card-float" type="button" aria-label="Hacer flotante" title="Hacer flotante">' +
+        '<svg class="i-float" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1.5"/></svg>' +
+        '<svg class="i-close" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>' +
+      '</button>' +
+    '</h2>' +
     '<div class="image-card-body">' +
       '<div class="image-card-thumb" aria-hidden="true"></div>' +
       '<div class="image-card-rows">' +
@@ -135,7 +140,10 @@
   function syncCard(){
     const o = activeOverlay();
     card.classList.toggle('hidden', !o);
-    if (!o) return;
+    if (!o) {
+      if (card.classList.contains('floating')) { card.classList.remove('floating'); card.style.left = ''; card.style.top = ''; }
+      return;
+    }
     const image = images.get(o.imageId);
     card.querySelector('.image-card-name').textContent = image ? image.name : '';
     const thumb = card.querySelector('.image-card-thumb');
@@ -167,6 +175,63 @@
     syncCard(); renderTrack(); B.requestDraw();
   });
   card.querySelector('.image-delete').addEventListener('click', () => { const o = activeOverlay(); if (o) removeOverlay(o.id); });
+
+  // ---------- Sección "Imagen" flotante ----------
+  const floatBtn = card.querySelector('.image-card-float');
+  const header = card.querySelector('h2');
+  let floatPos = null;
+  const ease = 'cubic-bezier(.22,.9,.25,1)';
+  function animateFrom(first, duration){
+    const last = card.getBoundingClientRect();
+    const dx = first.left - last.left, dy = first.top - last.top;
+    const sx = first.width / Math.max(1, last.width);
+    card.style.transition = 'none';
+    card.style.transformOrigin = 'top left';
+    card.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ',1)';
+    card.getBoundingClientRect();
+    card.style.transition = 'transform ' + duration + 'ms ' + ease;
+    card.style.transform = '';
+    const clean = () => { card.style.transition = ''; card.style.transformOrigin = ''; card.removeEventListener('transitionend', clean); };
+    card.addEventListener('transitionend', clean);
+    setTimeout(clean, duration + 80);
+  }
+  function placeFloating(){
+    const w = card.offsetWidth, h = card.offsetHeight;
+    // Por defecto, abajo (encima de los botones de exportar) para no tapar la ventana flotante del video.
+    if (!floatPos) floatPos = {x: (window.innerWidth - w) / 2, y: window.innerHeight - h - 104};
+    floatPos.x = clamp(floatPos.x, 8, Math.max(8, window.innerWidth - w - 8));
+    floatPos.y = clamp(floatPos.y, 8, Math.max(8, window.innerHeight - h - 8));
+    card.style.left = floatPos.x + 'px';
+    card.style.top = floatPos.y + 'px';
+  }
+  function setFloating(on){
+    if (on === card.classList.contains('floating')) return;
+    const first = card.getBoundingClientRect();
+    card.classList.toggle('floating', on);
+    floatBtn.setAttribute('aria-label', on ? 'Volver a su lugar' : 'Hacer flotante');
+    floatBtn.title = floatBtn.getAttribute('aria-label');
+    if (on) placeFloating();
+    else { card.style.left = ''; card.style.top = ''; }
+    animateFrom(first, on ? 360 : 460);
+  }
+  floatBtn.addEventListener('click', e => { e.stopPropagation(); setFloating(!card.classList.contains('floating')); });
+  // Arrastrar la sección flotante desde su título.
+  let panelDrag = null;
+  header.addEventListener('pointerdown', e => {
+    if (!card.classList.contains('floating') || e.target.closest('.image-card-float')) return;
+    e.preventDefault();
+    panelDrag = {x: e.clientX, y: e.clientY, px: floatPos.x, py: floatPos.y};
+    try { header.setPointerCapture(e.pointerId); } catch (error) {}
+  });
+  header.addEventListener('pointermove', e => {
+    if (!panelDrag) return;
+    floatPos.x = panelDrag.px + e.clientX - panelDrag.x;
+    floatPos.y = panelDrag.py + e.clientY - panelDrag.y;
+    placeFloating();
+  });
+  ['pointerup', 'pointercancel'].forEach(type => header.addEventListener(type, () => { panelDrag = null; }));
+  window.addEventListener('resize', () => { if (card.classList.contains('floating')) placeFloating(); });
+
 
   // ---------- Diálogo de fundido ----------
   const dialog = document.createElement('dialog');
@@ -210,11 +275,11 @@
   const editCtx = editCanvas.getContext('2d', {alpha: false});
   const doneBtn = document.createElement('button');
   doneBtn.type = 'button';
-  doneBtn.className = 'image-done-pill';
-  doneBtn.textContent = 'Listo';
+  doneBtn.className = 'image-delete-pill';
+  doneBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8zM6 7l1 14h10l1-14M10 11v6M14 11v6"/></svg>Eliminar imagen';
   stage.appendChild(doneBtn);
-  ['pointerdown', 'pointerup', 'click'].forEach(type => doneBtn.addEventListener(type, e => e.stopPropagation()));
-  doneBtn.addEventListener('click', () => exitEdit());
+  ['pointerdown', 'pointerup', 'click', 'touchstart'].forEach(type => doneBtn.addEventListener(type, e => e.stopPropagation()));
+  doneBtn.addEventListener('click', () => { const o = findOverlay(selectedId) || S.overlays[S.overlays.length - 1]; if (o) removeOverlay(o.id); });
 
   function enterEdit(id){
     if (!findOverlay(id)) return;
@@ -329,7 +394,13 @@
   ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'].forEach(type => {
     editCanvas.addEventListener(type, e => e.stopPropagation());
   });
-  const stageGestures = makeImageGestures(editCanvas, () => findOverlay(selectedId));
+  const stageGestures = makeImageGestures(editCanvas, (e, info) => hitOverlay(info, editCanvas));
+  editCanvas.addEventListener('touchstart', e => {
+    const r = editCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const info = {u: (touch.clientX - r.left) / Math.max(1, r.width), v: (touch.clientY - r.top) / Math.max(1, r.height)};
+    if (e.touches.length > 1 || hitOverlay(info, editCanvas)) e.preventDefault();
+  }, {passive: false});
 
   // En la ventana flotante: si el dedo toca una imagen, se edita la imagen;
   // si toca fuera de ella, la ventana se mueve o cambia de tamaño como siempre.
@@ -573,6 +644,7 @@
   let lastTotal = -1, lastWidth = '';
   function loop(){
     if (selectedId && !findOverlay(selectedId)) exitEdit();
+    if (!selectedId && S.overlays.length && S.cropLocked && !S.exporting && S.VW) enterEdit(S.overlays[S.overlays.length - 1].id);
     if (S.overlays.length && !S.exporting) followClips();
     else if (!S.overlays.length) clipsSignature = '';
     if (card.classList.contains('hidden') === !!S.overlays.length) syncCard();
@@ -587,7 +659,7 @@
       editingDraw = true;
       try { B.drawComposite(editCtx, w, h); } finally { editingDraw = false; }
       const o = findOverlay(selectedId);
-      if (o && images.get(o.imageId)) {
+      if (o && images.get(o.imageId) && overlayAlpha(o, B.currentProjectTime()) <= 0) {
         const box = overlayBox(o, w, h);
         editCtx.save();
         editCtx.translate(box.cx, box.cy);

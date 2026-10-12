@@ -493,7 +493,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v2.0.2</small>`;
+      <small class="app-version">v2.0.3</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -568,7 +568,7 @@ window.RecorteBridge={
 };
 window.RecorteImagenesReady=new Promise(resolve=>{
   const script=document.createElement('script');
-  script.src='imagenes.js?v=2.0.2';
+  script.src='imagenes.js?v=2.0.3';
   script.onload=()=>resolve(window.RecorteImagenes||null);
   script.onerror=()=>resolve(null);
   document.head.appendChild(script);
@@ -942,9 +942,20 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .image-card .image-delete{margin-top:14px;width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px;color:#E23D3D;background:var(--surface-2);border:1px solid rgba(226,61,61,.22)}
 .image-card .image-delete svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:430px){ .image-row{grid-template-columns:82px 1fr 44px;font-size:13px} .image-card-thumb{flex-basis:52px;width:52px;height:52px} }
-/* Listo dentro del visor (solo editando la imagen) */
-.image-done-pill{position:absolute;z-index:8;right:10px;bottom:10px;display:none;appearance:none;border:0;border-radius:999px;padding:8px 16px;background:#2A8CFF;color:#FFFFFF;font:650 14px var(--sans);box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
-.stage.image-mode .image-done-pill{display:block}
+/* Eliminar imagen dentro del visor */
+.image-delete-pill{position:absolute;z-index:8;right:10px;bottom:10px;display:none;align-items:center;gap:6px;appearance:none;border:0;border-radius:999px;padding:8px 14px;background:#E23D3D;color:#FFFFFF;font:650 13.5px var(--sans);box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
+.image-delete-pill svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.stage.image-mode .image-delete-pill{display:flex}
+.stage.image-mode .image-edit-canvas{touch-action:pan-y}
+/* Sección "Imagen" flotante */
+.image-card > h2{position:relative}
+.image-card-float{margin-left:10px;flex:0 0 32px;width:32px;height:32px;display:grid;place-items:center;appearance:none;border:1px solid rgba(42,140,255,.35);border-radius:10px;background:rgba(42,140,255,.10);color:#2A8CFF;cursor:pointer;padding:0}
+.image-card-float svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.image-card-float .i-close{display:none}
+.image-card.floating .image-card-float .i-float{display:none}
+.image-card.floating .image-card-float .i-close{display:block}
+.image-card.floating{position:fixed;z-index:44;margin:0;width:min(420px,calc(100vw - 20px));box-shadow:0 18px 50px rgba(0,0,0,.28);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);background:linear-gradient(180deg,rgba(42,140,255,.10),rgba(42,140,255,.02)),var(--surface)}
+.image-card.floating > h2{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 /* Versión */
 .brand .app-version{
   align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
