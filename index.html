@@ -334,7 +334,7 @@ function onRecStop(){`;
 
   // Tijeras giradas cortando de arriba hacia abajo, con la línea de corte saliendo de ellas.
   const oldScissors = `<svg viewBox="0 0 32 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2M28 2v20"/></svg>`;
-  const newScissors = `<svg viewBox="2 1 20 30" aria-hidden="true"><g transform="translate(24 0) rotate(90)"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2"/></g><path d="M12 17v13"/></svg>`;
+  const newScissors = `<svg viewBox="2 1 20 31.6" aria-hidden="true"><g transform="translate(24 0) rotate(90)"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2"/></g><path d="M12 24.4h.01M12 27.4h.01M12 30.4h.01" stroke-width="2.4"/></svg>`;
 
   // −1f / +1f: mantener presionado avanza o retrocede de forma continua.
   const oldStepButtons = `els.stepBack.addEventListener('click',()=>stepProjectFrames(-1));
@@ -371,7 +371,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v1.0.2</small>`;
+      <small class="app-version">v1.0.3</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -434,6 +434,7 @@ function hideFloatingHint(){
   ['pointerdown','touchstart','touchmove','wheel','keydown'].forEach(type=>window.removeEventListener(type,hideFloatingHint,true));
 }
 function showFloatingHint(){
+  if(suppressFloatingHintOnce){ suppressFloatingHintOnce=false; return; }
   if(!S.floatingPreview) return;
   let hint=document.getElementById('floatingHint');
   if(!hint){
@@ -454,7 +455,7 @@ function showFloatingHint(){
     if(!hint.classList.contains('show')) return;
     ['pointerdown','touchstart','touchmove','wheel','keydown'].forEach(type=>window.addEventListener(type,hideFloatingHint,{capture:true,passive:true}));
   },250);
-  floatingHintTimer=setTimeout(hideFloatingHint,2000);
+  floatingHintTimer=setTimeout(hideFloatingHint,3000);
 }
 let fastExporterLoading=null;
 function loadFastExporter(){
@@ -481,6 +482,145 @@ async function tryFastExport(){
     return false;
   }
 }
+// ===== Proyecto guardado en el dispositivo: al salir y volver, se recupera tal cual =====
+const SAVE_DB='recorte-proyecto';
+let saveDbPromise=null, lastSavedState='', savedFileIds=new Set(), saveBusy=false, restoringProject=false, suppressFloatingHintOnce=false;
+function openSaveDb(){
+  if(saveDbPromise) return saveDbPromise;
+  saveDbPromise=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){ reject(new Error('Sin almacenamiento local')); return; }
+    const request=indexedDB.open(SAVE_DB,1);
+    request.onupgradeneeded=()=>{
+      const db=request.result;
+      if(!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+      if(!db.objectStoreNames.contains('state')) db.createObjectStore('state');
+    };
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  }).catch(error=>{ saveDbPromise=null; throw error; });
+  return saveDbPromise;
+}
+function saveStore(store,mode,work){
+  return openSaveDb().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(store,mode);
+    const request=work(tx.objectStore(store));
+    let result;
+    if(request) request.onsuccess=()=>{ result=request.result; };
+    tx.oncomplete=()=>resolve(result);
+    tx.onerror=()=>reject(tx.error);
+    tx.onabort=()=>reject(tx.error);
+  }));
+}
+function projectStateForSave(){
+  if(!S.sources.length||!S.clips.length) return null;
+  return {
+    v:1,
+    sources:S.sources.map(s=>({id:s.id,name:s.name,duration:s.duration,width:s.width,height:s.height,bitrate:s.bitrate,fps:s.fps,originalFormat:s.originalFormat})),
+    clips:S.clips, time:currentProjectTime(), serial:S.serial,
+    crop:S.crop, ratio:S.ratio, ratioKey:S.ratioKey, cropLocked:S.cropLocked,
+    rot:S.rot, flipH:S.flipH, flipV:S.flipV,
+    projectName:S.projectName, projectFormat:S.projectFormat,
+    customW:els.cw.value, customH:els.ch.value,
+    floating:S.floatingPreview, keepAudio:els.keepAudio.checked
+  };
+}
+async function saveProjectNow(){
+  if(saveBusy||restoringProject||S.exporting) return;
+  const state=projectStateForSave();
+  if(!state) return;
+  saveBusy=true;
+  try{
+    for(const source of S.sources){
+      if(savedFileIds.has(source.id)||!source.file) continue;
+      await saveStore('files','readwrite',store=>store.put(source.file,source.id));
+      savedFileIds.add(source.id);
+    }
+    const current=new Set(S.sources.map(source=>source.id));
+    for(const id of [...savedFileIds]){
+      if(current.has(id)) continue;
+      await saveStore('files','readwrite',store=>store.delete(id));
+      savedFileIds.delete(id);
+    }
+    const json=JSON.stringify(state);
+    if(json!==lastSavedState){
+      await saveStore('state','readwrite',store=>store.put(json,'project'));
+      lastSavedState=json;
+    }
+  }catch(error){
+    console.warn('No se pudo guardar el proyecto en el dispositivo.',error);
+  }finally{
+    saveBusy=false;
+  }
+}
+async function clearSavedProject(){
+  savedFileIds=new Set(); lastSavedState='';
+  try{
+    await saveStore('state','readwrite',store=>store.clear());
+    await saveStore('files','readwrite',store=>store.clear());
+  }catch(error){}
+}
+function showRestoredNotice(){
+  const toast=document.createElement('div');
+  toast.className='restore-toast';
+  toast.innerHTML='<span>Proyecto recuperado</span><button type="button">Empezar otro</button>';
+  document.body.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add('show'));
+  const close=()=>{ toast.classList.remove('show'); setTimeout(()=>toast.remove(),250); };
+  const timer=setTimeout(close,5000);
+  toast.querySelector('button').addEventListener('click',async()=>{
+    clearTimeout(timer);
+    clearInterval(autoSaveTimer);
+    await clearSavedProject();
+    location.reload();
+  });
+}
+async function restoreSavedProject(){
+  let json;
+  try{ json=await saveStore('state','readonly',store=>store.get('project')); }
+  catch(error){ return; }
+  if(!json||S.clips.length) return;
+  restoringProject=true;
+  try{
+    const state=JSON.parse(json);
+    const sources=[];
+    for(const meta of state.sources){
+      const file=await saveStore('files','readonly',store=>store.get(meta.id));
+      if(!file) throw new Error('Falta un video guardado.');
+      sources.push({...meta,file,url:URL.createObjectURL(file)});
+    }
+    S.sources=sources;
+    S.clips=state.clips;
+    S.serial=Math.max(S.serial,state.serial||0);
+    S.activeClip=-1; S.sourceId=null;
+    S.projectName=state.projectName||'video'; S.name=S.projectName;
+    S.projectFormat=state.projectFormat||'mp4';
+    S.history=[]; S.redo=[];
+    S.rot=state.rot||0; S.flipH=!!state.flipH; S.flipV=!!state.flipV;
+    S.crop=state.crop||{x:0,y:0,w:1,h:1}; S.ratio=state.ratio||null; S.ratioKey=state.ratioKey||null;
+    if(state.customW) els.cw.value=state.customW;
+    if(state.customH) els.ch.value=state.customH;
+    els.customRow.style.display=S.ratioKey==='custom'?'flex':'none';
+    if(typeof state.keepAudio==='boolean') els.keepAudio.checked=state.keepAudio;
+    setCropLocked(state.cropLocked!==false);
+    const located=locateProjectTime(state.time||0);
+    await activateClip(located?located.index:0,{seek:located?located.sourceTime:null});
+    savedFileIds=new Set(sources.map(source=>source.id));
+    lastSavedState=json;
+    if(state.floating!==false){ suppressFloatingHintOnce=true; setFloatingPreview(true); }
+    showRestoredNotice();
+  }catch(error){
+    console.warn('No se pudo recuperar el proyecto guardado.',error);
+    S.sources=[]; S.clips=[];
+    await clearSavedProject();
+  }finally{
+    restoringProject=false;
+  }
+}
+try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(error){}
+const autoSaveTimer=setInterval(saveProjectNow,1500);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveProjectNow(); });
+window.addEventListener('pagehide',saveProjectNow);
+restoreSavedProject();
 })();`;
 
   const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
@@ -548,6 +688,19 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .frame-tools .flip-icon{width:22px;height:22px;display:block;margin:auto;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
 /* −1f / +1f: sin menú ni selección al mantener presionado */
 .step-btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+/* Aviso de proyecto recuperado */
+.restore-toast{
+  position:fixed;z-index:47;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:12px;padding:8px 8px 8px 15px;border-radius:999px;
+  background:rgba(28,28,30,.90);color:#FFFFFF;font:600 13.5px var(--sans);white-space:nowrap;
+  box-shadow:0 10px 30px rgba(0,0,0,.22);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  opacity:0;transform:translate(-50%,6px);transition:opacity .2s ease,transform .2s ease;pointer-events:none
+}
+.restore-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.restore-toast button{
+  appearance:none;border:0;border-radius:999px;padding:7px 12px;
+  background:rgba(255,255,255,.16);color:#FFFFFF;font:650 13px var(--sans);cursor:pointer
+}
 /* Versión */
 .brand .app-version{
   align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
@@ -555,7 +708,7 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 }
 /* Vista flotante: la mitad de tamaño en el móvil */
 @media(max-width:700px){
-  .floating-preview{width:min(21vw,95px);padding:3px;border-radius:12px}
+  .floating-preview{width:min(28vw,125px);padding:3px;border-radius:12px}
   .floating-preview canvas{border-radius:9px}
   .floating-close{top:4px;right:4px;width:20px;height:20px}
   .floating-close::before,.floating-close::after{width:9px;height:1.5px}
