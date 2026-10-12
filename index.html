@@ -363,7 +363,7 @@ function drawLivePreviews(){
   const newInsertDialog = `    <dialog class="apple-dialog" id="resetDialog">
       <form method="dialog">
         <h3>¿Empezar con otro video?</h3>
-        <p>Se perderán el video actual y todos sus cambios.</p>
+        <p>Se perderán todos los cambios.</p>
         <div class="dialog-actions">
           <button class="btn ghost" value="cancel">Cancelar</button>
           <button class="btn primary" value="accept">Aceptar</button>
@@ -412,7 +412,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v1.0.4</small>`;
+      <small class="app-version">v1.0.5</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -568,12 +568,14 @@ async function saveProjectNow(force){
   saveBusy=true;
   try{
     for(const source of S.sources){
+      if(force===true) break;
       if(savedFileIds.has(source.id)||!source.file) continue;
       await saveStore('files','readwrite',store=>store.put(source.file,source.id));
       savedFileIds.add(source.id);
     }
     const current=new Set(S.sources.map(source=>source.id));
     for(const id of [...savedFileIds]){
+      if(force===true) break;
       if(current.has(id)) continue;
       await saveStore('files','readwrite',store=>store.delete(id));
       savedFileIds.delete(id);
@@ -595,21 +597,6 @@ async function clearSavedProject(){
     await saveStore('state','readwrite',store=>store.clear());
     await saveStore('files','readwrite',store=>store.clear());
   }catch(error){}
-}
-function showRestoredNotice(){
-  const toast=document.createElement('div');
-  toast.className='restore-toast';
-  toast.innerHTML='<span>Proyecto recuperado</span><button type="button">Empezar otro</button>';
-  document.body.appendChild(toast);
-  requestAnimationFrame(()=>toast.classList.add('show'));
-  const close=()=>{ toast.classList.remove('show'); setTimeout(()=>toast.remove(),250); };
-  const timer=setTimeout(close,5000);
-  toast.querySelector('button').addEventListener('click',async()=>{
-    clearTimeout(timer);
-    clearInterval(autoSaveTimer);
-    await clearSavedProject();
-    location.reload();
-  });
 }
 async function restoreSavedProject(){
   let json;
@@ -644,7 +631,6 @@ async function restoreSavedProject(){
     savedFileIds=new Set(sources.map(source=>source.id));
     lastSavedState=json;
     if(state.floating!==false){ suppressFloatingHintOnce=true; setFloatingPreview(true); }
-    showRestoredNotice();
   }catch(error){
     console.warn('No se pudo recuperar el proyecto guardado.',error);
     S.sources=[]; S.clips=[];
@@ -657,9 +643,9 @@ try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(
 const autoSaveTimer=setInterval(saveProjectNow,1500);
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveProjectNow(true); });
 window.addEventListener('pagehide',()=>saveProjectNow(true));
-restoreSavedProject();
 const brand=document.querySelector('.brand');
 const resetDialog=document.getElementById('resetDialog');
+if(resetDialog) document.body.appendChild(resetDialog);
 async function goHome(){
   clearInterval(autoSaveTimer);
   await clearSavedProject();
@@ -673,12 +659,46 @@ if(brand){
     if(S.exporting) return;
     if(!S.clips.length) return;
     if(resetDialog&&typeof resetDialog.showModal==='function'){ resetDialog.returnValue=''; resetDialog.showModal(); }
-    else if(confirm('Se perderán el video actual y todos sus cambios. ¿Continuar?')) goHome();
+    else if(confirm('¿Empezar con otro video? Se perderán todos los cambios.')) goHome();
   };
   brand.addEventListener('click',openHome);
   brand.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openHome(); } });
 }
-if(resetDialog) resetDialog.addEventListener('close',()=>{ if(resetDialog.returnValue==='accept') goHome(); });
+if(resetDialog) resetDialog.addEventListener('close',()=>{
+  const mode=resetDialog.dataset.mode||'';
+  resetDialog.dataset.mode='';
+  if(mode==='restore'){
+    if(resetDialog.returnValue==='accept') clearSavedProject();
+    else restoreGuarded();
+    return;
+  }
+  if(resetDialog.returnValue==='accept') goHome();
+});
+// Al volver a abrir la página: preguntar en el centro si se sigue con el video o se empieza otro.
+const RESTORE_GUARD='recorte-restaurando';
+async function restoreGuarded(){
+  try{ localStorage.setItem(RESTORE_GUARD,'1'); }catch(error){}
+  await restoreSavedProject();
+  setTimeout(()=>{ try{ localStorage.removeItem(RESTORE_GUARD); }catch(error){} },3000);
+}
+async function startupRestoreFlow(){
+  let crashedBefore=false;
+  try{ crashedBefore=localStorage.getItem(RESTORE_GUARD)==='1'; localStorage.removeItem(RESTORE_GUARD); }catch(error){}
+  if(crashedBefore){ await clearSavedProject(); return; }
+  let saved=null;
+  try{ saved=await saveStore('state','readonly',store=>store.get('project')); }catch(error){ return; }
+  if(!saved||S.clips.length) return;
+  if(resetDialog&&typeof resetDialog.showModal==='function'){
+    resetDialog.dataset.mode='restore';
+    resetDialog.returnValue='';
+    resetDialog.showModal();
+  }else if(confirm('¿Empezar con otro video? Se perderán todos los cambios.')){
+    clearSavedProject();
+  }else{
+    restoreGuarded();
+  }
+}
+startupRestoreFlow();
 })();`;
 
   const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
@@ -746,19 +766,6 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .frame-tools .flip-icon{width:22px;height:22px;display:block;margin:auto;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
 /* −1f / +1f: sin menú ni selección al mantener presionado */
 .step-btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
-/* Aviso de proyecto recuperado */
-.restore-toast{
-  position:fixed;z-index:47;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));
-  display:flex;align-items:center;gap:12px;padding:8px 8px 8px 15px;border-radius:999px;
-  background:rgba(28,28,30,.90);color:#FFFFFF;font:600 13.5px var(--sans);white-space:nowrap;
-  box-shadow:0 10px 30px rgba(0,0,0,.22);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  opacity:0;transform:translate(-50%,6px);transition:opacity .2s ease,transform .2s ease;pointer-events:none
-}
-.restore-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
-.restore-toast button{
-  appearance:none;border:0;border-radius:999px;padding:7px 12px;
-  background:rgba(255,255,255,.16);color:#FFFFFF;font:650 13px var(--sans);cursor:pointer
-}
 /* Logo como botón de inicio */
 .brand{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .brand:focus-visible{outline:3px solid rgba(31,191,91,.45);outline-offset:4px;border-radius:12px}
