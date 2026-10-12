@@ -345,7 +345,8 @@ function onRecStop(){`;
   if(previewNeedsAudioGraph()) ensureAudio();
 });`;
   const oldStartPlayback = `function startCurrentPlayback(){`;
-  const newStartPlayback = `function previewNeedsAudioGraph(){
+  const newStartPlayback = `els.video.addEventListener('seeking',()=>{ if(!S.exporting) S.seekedSincePlay=true; });
+function previewNeedsAudioGraph(){
   return !!S.audio||S.clips.some(c=>(c.fadeAudioIn||0)>0||(c.fadeAudioOut||0)>0);
 }
 function playWhenReady(v){
@@ -353,6 +354,24 @@ function playWhenReady(v){
   const go=()=>{
     if(S.pendingPlay!==token) return;
     S.pendingPlay=0;
+    // Tras mover la bolita, iPhone/iPad pueden soltar un trozo de audio de la posición anterior:
+    // se silencia hasta que el video avanza realmente desde el nuevo punto.
+    if(S.seekedSincePlay&&!v.muted){
+      const startAt=v.currentTime;
+      let restored=false;
+      v.muted=true;
+      const restore=()=>{
+        if(restored) return;
+        restored=true;
+        v.removeEventListener('timeupdate',onTime);
+        clearTimeout(limit);
+        v.muted=false;
+      };
+      const onTime=()=>{ if(v.currentTime>=startAt+0.15) restore(); };
+      v.addEventListener('timeupdate',onTime);
+      const limit=setTimeout(restore,700);
+    }
+    S.seekedSincePlay=false;
     v.play().catch(function(){ setPlaybackUI(false); });
   };
   if(!v.seeking&&v.readyState>=3){ go(); return; }
@@ -461,7 +480,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v1.0.6</small>`;
+      <small class="app-version">v1.0.7</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -540,7 +559,7 @@ function showFloatingHint(){
   hint.style.right=Math.max(10,window.innerWidth-rect.right)+'px';
   hideFloatingHint();
   hint.classList.add('show');
-  floatingHintTimer=setTimeout(hideFloatingHint,3000);
+  floatingHintTimer=setTimeout(hideFloatingHint,6000);
 }
 let fastExporterLoading=null;
 function loadFastExporter(){
@@ -690,8 +709,9 @@ async function restoreSavedProject(){
 }
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(error){}
 const autoSaveTimer=setInterval(saveProjectNow,1500);
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveProjectNow(true); });
-window.addEventListener('pagehide',()=>saveProjectNow(true));
+function clearRestoreGuard(){ try{ localStorage.removeItem('recorte-restaurando'); }catch(error){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden'){ clearRestoreGuard(); saveProjectNow(true); } });
+window.addEventListener('pagehide',()=>{ clearRestoreGuard(); saveProjectNow(true); });
 const brand=document.querySelector('.brand');
 const resetDialog=document.getElementById('resetDialog');
 if(resetDialog) document.body.appendChild(resetDialog);
