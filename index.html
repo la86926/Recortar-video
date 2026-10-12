@@ -21,6 +21,8 @@ html,body{margin:0;min-height:100%;background:#F5F5F7;color:#1D1D1F;font-family:
 (() => {
   'use strict';
 
+  const FAST_EXPORT_VERSION = '20261011';
+
   const BASE_SOURCES = [
     'https://raw.githubusercontent.com/la86926/Recortar-video/513adda8511b3d75888f9b49fc5c62c2df22dd81/index.html',
     'https://cdn.jsdelivr.net/gh/la86926/Recortar-video@513adda8511b3d75888f9b49fc5c62c2df22dd81/index.html'
@@ -311,6 +313,63 @@ window.addEventListener('pagehide',interruptExportWhenHidden);
 window.addEventListener('pageshow',explainInterruptedExport);
 function onRecStop(){`;
 
+  // Exportación rápida: procesa el archivo directamente, sin reproducirlo en tiempo real.
+  // Si el navegador no la admite, se usa la grabación en tiempo real como respaldo.
+  const oldExportEntry = `  if(S.projectFormat==='gif'){ await startGifExport(); return; }
+  if(!window.MediaRecorder){`;
+  const newExportEntry = `  if(S.projectFormat==='gif'){ await startGifExport(); return; }
+  if(await tryFastExport()) return;
+  if(!window.MediaRecorder){`;
+
+  const oldCancel = `  if(S.exportKind==='gif') S.gifExportCancelled=true;
+  else finishExport(true);`;
+  const newCancel = `  if(S.exportKind==='gif') S.gifExportCancelled=true;
+  else if(S.exportKind==='fast') S.fastExportCancelled=true;
+  else finishExport(true);`;
+
+  // Respaldo en navegadores que no graban MP4 (por ejemplo Firefox): se guarda en WebM.
+  const oldPickMime = `  const cands=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a','video/mp4'];`;
+  const newPickMime = `  const cands=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];`;
+
+  const oldRecType = `  const type='video/mp4';
+  const blob=new Blob(S.chunks,{type}); S.chunks=[];
+  setExportResult(blob,type,'mp4',ex);`;
+  const newRecType = `  const type=/webm/i.test(S.mime||'')?'video/webm':'video/mp4';
+  const blob=new Blob(S.chunks,{type}); S.chunks=[];
+  setExportResult(blob,type,type==='video/webm'?'webm':'mp4',ex);`;
+
+  const oldScriptEnd = `  if(e.key==='ArrowRight'){ e.preventDefault(); stepProjectFrames(e.shiftKey?10:1); }
+});
+})();`;
+  const newScriptEnd = `  if(e.key==='ArrowRight'){ e.preventDefault(); stepProjectFrames(e.shiftKey?10:1); }
+});
+let fastExporterLoading=null;
+function loadFastExporter(){
+  if(window.RecorteRapido) return Promise.resolve(window.RecorteRapido);
+  if(!fastExporterLoading){
+    fastExporterLoading=new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src='exportador-rapido.js?v=${FAST_EXPORT_VERSION}';
+      script.async=true;
+      script.onload=()=>window.RecorteRapido?resolve(window.RecorteRapido):reject(new Error('Exportador no disponible'));
+      script.onerror=()=>reject(new Error('No se pudo cargar el exportador'));
+      document.head.appendChild(script);
+    }).catch(error=>{ fastExporterLoading=null; throw error; });
+  }
+  return fastExporterLoading;
+}
+async function tryFastExport(){
+  try{
+    const exporter=await loadFastExporter();
+    return await exporter.exportar({S,els,buildExportPlan,sourceById,projectExportSize,fadeFactor,setExportResult,fmt});
+  }catch(error){
+    console.warn('Se usará la exportación en tiempo real.',error);
+    S.exporting=false; S.exportKind=null;
+    return false;
+  }
+}
+})();`;
+
   const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
 .edit-toast{display:none !important}
 .stage{
@@ -408,6 +467,11 @@ html[data-theme="dark"] .stage-toolbar .crop-lock-control[aria-pressed="false"]{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldExportEntry, newExportEntry, 'exportación rápida');
+    html = replaceExactlyOnce(html, oldCancel, newCancel, 'cancelar exportación rápida');
+    html = replaceExactlyOnce(html, oldPickMime, newPickMime, 'formatos de respaldo');
+    html = replaceExactlyOnce(html, oldRecType, newRecType, 'tipo de archivo de respaldo');
+    html = replaceExactlyOnce(html, oldScriptEnd, newScriptEnd, 'conexión con el exportador rápido');
     html = replaceExactlyOnce(html, '@media (max-width:430px){', cssOverride + '@media (max-width:430px){', 'estilos');
     return html;
   }
