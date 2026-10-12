@@ -332,6 +332,47 @@ function onRecStop(){`;
   const newFlipButtons = `        <button class="btn tiny ghost" id="flipH" aria-label="Reflejar horizontalmente" title="Reflejar horizontalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(90 12 12)">${flipArrows}</g></svg></button>
         <button class="btn tiny ghost" id="flipV" aria-label="Reflejar verticalmente" title="Reflejar verticalmente"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true">${flipArrows}</svg></button>`;
 
+  // Fluidez al reproducir: menos trabajo por fotograma y sin competir con el video.
+  const oldPreviewCanvasSize = `  if(els.out.width!==o.w||els.out.height!==o.h){ els.out.width=o.w; els.out.height=o.h; }`;
+  const newPreviewCanvasSize = `  const previewScale=Math.min(1,1280/Math.max(o.w,o.h));
+  const previewW=Math.max(2,Math.round(o.w*previewScale)), previewH=Math.max(2,Math.round(o.h*previewScale));
+  if(els.out.width!==previewW||els.out.height!==previewH){ els.out.width=previewW; els.out.height=previewH; }`;
+  const oldLivePreviews = `function drawLivePreviews(){
+  drawComposite(octx,els.out.width,els.out.height);`;
+  const newLivePreviews = `let previewCardVisible=true;
+if('IntersectionObserver' in window){
+  new IntersectionObserver(entries=>{
+    previewCardVisible=entries.some(entry=>entry.isIntersecting);
+    if(previewCardVisible) needsDraw=true;
+  }).observe(els.out);
+}
+function drawLivePreviews(){
+  if(previewCardVisible) drawComposite(octx,els.out.width,els.out.height);`;
+  const oldMonitorGain = `    S.audio.monitor.gain.value=(clip&&clip.reversed?0:1.1*fadeFactor(clip,v.currentTime,'audio'));`;
+  const newMonitorGain = `    const monitorGain=(clip&&clip.reversed?0:1.1*fadeFactor(clip,v.currentTime,'audio'));
+    if(Math.abs(S.audio.monitor.gain.value-monitorGain)>0.001) S.audio.monitor.gain.value=monitorGain;`;
+  const oldStripLoop = `      if(token!==S.thumbToken) break;
+      const projectTime=(i+0.5)/N*total;`;
+  const newStripLoop = `      if(token!==S.thumbToken) break;
+      while(token===S.thumbToken&&(!els.video.paused||S.reversePlaying)) await new Promise(resolve=>setTimeout(resolve,300));
+      if(token!==S.thumbToken) break;
+      const projectTime=(i+0.5)/N*total;`;
+
+  // Tocar "Recorte" (logo) vuelve al inicio para abrir otro video, con confirmación.
+  const oldInsertDialog = `    <dialog class="apple-dialog" id="insertDialog">`;
+  const newInsertDialog = `    <dialog class="apple-dialog" id="resetDialog">
+      <form method="dialog">
+        <h3>¿Empezar con otro video?</h3>
+        <p>Se perderán el video actual y todos sus cambios.</p>
+        <div class="dialog-actions">
+          <button class="btn ghost" value="cancel">Cancelar</button>
+          <button class="btn primary" value="accept">Aceptar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="apple-dialog" id="insertDialog">`;
+
   // Tijeras giradas cortando de arriba hacia abajo, con la línea de corte saliendo de ellas.
   const oldScissors = `<svg viewBox="0 0 32 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2M28 2v20"/></svg>`;
   const newScissors = `<svg viewBox="2 1 20 31.6" aria-hidden="true"><g transform="translate(24 0) rotate(90)"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2"/></g><path d="M12 24.4h.01M12 27.4h.01M12 30.4h.01" stroke-width="2.4"/></svg>`;
@@ -371,7 +412,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v1.0.3</small>`;
+      <small class="app-version">v1.0.4</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -450,11 +491,6 @@ function showFloatingHint(){
   hint.style.right=Math.max(10,window.innerWidth-rect.right)+'px';
   hideFloatingHint();
   hint.classList.add('show');
-  // Cualquier gesto del usuario lo quita al instante; nunca bloquea el desplazamiento.
-  setTimeout(()=>{
-    if(!hint.classList.contains('show')) return;
-    ['pointerdown','touchstart','touchmove','wheel','keydown'].forEach(type=>window.addEventListener(type,hideFloatingHint,{capture:true,passive:true}));
-  },250);
   floatingHintTimer=setTimeout(hideFloatingHint,3000);
 }
 let fastExporterLoading=null;
@@ -524,8 +560,9 @@ function projectStateForSave(){
     floating:S.floatingPreview, keepAudio:els.keepAudio.checked
   };
 }
-async function saveProjectNow(){
+async function saveProjectNow(force){
   if(saveBusy||restoringProject||S.exporting) return;
+  if(force!==true&&(!els.video.paused||S.reversePlaying)) return;
   const state=projectStateForSave();
   if(!state) return;
   saveBusy=true;
@@ -618,9 +655,30 @@ async function restoreSavedProject(){
 }
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(error){}
 const autoSaveTimer=setInterval(saveProjectNow,1500);
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveProjectNow(); });
-window.addEventListener('pagehide',saveProjectNow);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveProjectNow(true); });
+window.addEventListener('pagehide',()=>saveProjectNow(true));
 restoreSavedProject();
+const brand=document.querySelector('.brand');
+const resetDialog=document.getElementById('resetDialog');
+async function goHome(){
+  clearInterval(autoSaveTimer);
+  await clearSavedProject();
+  location.reload();
+}
+if(brand){
+  brand.setAttribute('role','button');
+  brand.setAttribute('tabindex','0');
+  brand.setAttribute('aria-label','Inicio');
+  const openHome=()=>{
+    if(S.exporting) return;
+    if(!S.clips.length) return;
+    if(resetDialog&&typeof resetDialog.showModal==='function'){ resetDialog.returnValue=''; resetDialog.showModal(); }
+    else if(confirm('Se perderán el video actual y todos sus cambios. ¿Continuar?')) goHome();
+  };
+  brand.addEventListener('click',openHome);
+  brand.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openHome(); } });
+}
+if(resetDialog) resetDialog.addEventListener('close',()=>{ if(resetDialog.returnValue==='accept') goHome(); });
 })();`;
 
   const cssOverride = `/* Mejoras solicitadas: visor compacto, bloqueo claro y pantalla sin avisos flotantes */
@@ -701,6 +759,10 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
   appearance:none;border:0;border-radius:999px;padding:7px 12px;
   background:rgba(255,255,255,.16);color:#FFFFFF;font:650 13px var(--sans);cursor:pointer
 }
+/* Logo como botón de inicio */
+.brand{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.brand:focus-visible{outline:3px solid rgba(31,191,91,.45);outline-offset:4px;border-radius:12px}
+#resetDialog .btn.primary{background:var(--action) !important;color:#FFFFFF !important}
 /* Versión */
 .brand .app-version{
   align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
@@ -756,6 +818,11 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
     html = replaceExactlyOnce(html, oldTickDraw, newTickDraw, 'sin fotogramas fuera del recorte');
     html = replaceExactlyOnce(html, oldTickStatus, newTickStatus, 'aviso durante la exportación');
     html = replaceExactlyOnce(html, oldRecStop, newRecStop, 'detener exportación al salir de la pantalla');
+    html = replaceExactlyOnce(html, oldPreviewCanvasSize, newPreviewCanvasSize, 'tamaño de la vista previa');
+    html = replaceExactlyOnce(html, oldLivePreviews, newLivePreviews, 'dibujo de vistas previas');
+    html = replaceExactlyOnce(html, oldMonitorGain, newMonitorGain, 'volumen de la vista previa');
+    html = replaceExactlyOnce(html, oldStripLoop, newStripLoop, 'miniaturas sin interrumpir la reproducción');
+    html = replaceExactlyOnce(html, oldInsertDialog, newInsertDialog, 'diálogo de nuevo proyecto');
     html = replaceExactlyOnce(html, oldScissors, newScissors, 'icono de tijeras');
     html = replaceExactlyOnce(html, oldStepButtons, newStepButtons, 'avance continuo de fotogramas');
     html = replaceExactlyOnce(html, oldFloatIcon, newFloatIcon, 'icono de la vista flotante');
