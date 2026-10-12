@@ -493,7 +493,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v2.0.0</small>`;
+      <small class="app-version">v2.0.1</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -568,7 +568,7 @@ window.RecorteBridge={
 };
 window.RecorteImagenesReady=new Promise(resolve=>{
   const script=document.createElement('script');
-  script.src='imagenes.js?v='+'2.0.0';
+  script.src='imagenes.js?v='+'2.0.1';
   script.onload=()=>resolve(window.RecorteImagenes||null);
   script.onerror=()=>resolve(null);
   document.head.appendChild(script);
@@ -928,13 +928,23 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .image-edit-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;z-index:6;touch-action:none;border-radius:inherit}
 .stage.image-mode .image-edit-canvas{display:block}
 .stage.image-mode video,.stage.image-mode .shade,.stage.image-mode .badge{opacity:0 !important;pointer-events:none !important}
-/* Controles de la imagen: esquinas redondeadas */
-.image-tools{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 10px;border-radius:16px;background:var(--surface-2);border:1px solid var(--line)}
-.image-tools.hidden{display:none}
-.image-tools-icon svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-.image-tools .image-radius{flex:1;min-width:0;accent-color:var(--action)}
-.image-tools .image-delete{flex:0 0 42px;width:42px;min-height:42px;color:#E23D3D}
-.image-tools .image-done{flex:0 0 auto;min-height:42px;padding:0 16px}
+/* Sección "Imagen": acento azul para distinguirla de las funciones del video */
+.image-card.hidden{display:none}
+.image-card{border-color:rgba(42,140,255,.35);background:linear-gradient(180deg,rgba(42,140,255,.07),rgba(42,140,255,0) 70%),var(--surface)}
+.image-card > h2::before{background:#2A8CFF !important}
+.image-card > h2{color:#2A8CFF}
+.image-card-body{display:flex;gap:14px;align-items:center}
+.image-card-thumb{flex:0 0 64px;width:64px;height:64px;border-radius:0;background:#2A8CFF center/cover no-repeat;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);transition:border-radius .1s}
+.image-card-rows{flex:1;min-width:0;display:grid;gap:8px}
+.image-row{display:grid;grid-template-columns:92px 1fr 50px;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--text-2)}
+.image-row input[type=range]{width:100%;min-width:0;accent-color:#2A8CFF}
+.image-row output{font:600 12.5px var(--mono);color:var(--text-3);text-align:right}
+.image-card .image-delete{margin-top:14px;width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px;color:#E23D3D;background:var(--surface-2);border:1px solid rgba(226,61,61,.22)}
+.image-card .image-delete svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:430px){ .image-row{grid-template-columns:82px 1fr 44px;font-size:13px} .image-card-thumb{flex-basis:52px;width:52px;height:52px} }
+/* Listo dentro del visor (solo editando la imagen) */
+.image-done-pill{position:absolute;z-index:8;right:10px;bottom:10px;display:none;appearance:none;border:0;border-radius:999px;padding:8px 16px;background:#2A8CFF;color:#FFFFFF;font:650 14px var(--sans);box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
+.stage.image-mode .image-done-pill{display:block}
 /* Versión */
 .brand .app-version{
   align-self:center;padding:2px 7px;border:1px solid var(--line);border-radius:999px;

@@ -4,7 +4,8 @@
  * - Línea de tiempo propia (encima de la del video): bordes arrastrables y fundido al tocar cada borde.
  * - Mientras una imagen está seleccionada, el visor muestra el encuadre final y la imagen
  *   se mueve con un dedo, se agranda/achica y gira con dos dedos.
- * - Deslizador para redondear las esquinas en tiempo real.
+ * - Sección "Imagen" (entre Recortes y Vista previa): esquinas redondeadas y fundidos de entrada/salida.
+ * - Efecto imán: si se borran o recortan tramos del video, la imagen sigue al contenido.
  * Se dibuja igual en la vista previa, en la vista flotante y en el video exportado.
  */
 (function(){
@@ -112,25 +113,61 @@
   track.appendChild(trackContent);
   strip.parentNode.insertBefore(track, strip);
 
-  // ---------- Controles de la imagen seleccionada ----------
-  const frameTools = document.querySelector('.frame-tools');
-  const tools = document.createElement('div');
-  tools.className = 'image-tools hidden';
-  tools.innerHTML =
-    '<span class="image-tools-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V11a7 7 0 0 1 7-7h9"/></svg></span>' +
-    '<input class="image-radius" type="range" min="0" max="100" step="1" value="0" aria-label="Redondear esquinas">' +
-    '<button class="icon-btn image-delete" type="button" aria-label="Quitar imagen" title="Quitar imagen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8zM6 7l1 14h10l1-14M10 11v6M14 11v6"/></svg></button>' +
-    '<button class="btn primary image-done" type="button">Listo</button>';
-  if (frameTools) frameTools.after(tools);
-  const radiusInput = tools.querySelector('.image-radius');
-  radiusInput.addEventListener('input', () => {
-    const o = findOverlay(selectedId);
+  // ---------- Sección "Imagen" (solo cuando hay imágenes) ----------
+  const projectCard = document.getElementById('projectCard');
+  const card = document.createElement('section');
+  card.className = 'card image-card hidden';
+  card.innerHTML =
+    '<h2>Imagen <span class="r image-card-name"></span></h2>' +
+    '<div class="image-card-body">' +
+      '<div class="image-card-thumb" aria-hidden="true"></div>' +
+      '<div class="image-card-rows">' +
+        '<label class="image-row"><span>Esquinas</span><input class="image-radius" type="range" min="0" max="100" step="1" value="0"><output class="image-radius-out">0%</output></label>' +
+        '<label class="image-row"><span>Aparecer</span><input class="image-fade-in" type="range" min="0" max="5" step="0.1" value="1"><output class="image-fade-in-out">1.0 s</output></label>' +
+        '<label class="image-row"><span>Desaparecer</span><input class="image-fade-out" type="range" min="0" max="5" step="0.1" value="1"><output class="image-fade-out-out">1.0 s</output></label>' +
+      '</div>' +
+    '</div>' +
+    '<button class="btn image-delete" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8zM6 7l1 14h10l1-14M10 11v6M14 11v6"/></svg>Quitar imagen</button>';
+  if (projectCard) projectCard.after(card);
+  const radiusInput = card.querySelector('.image-radius');
+  const fadeInInput = card.querySelector('.image-fade-in');
+  const fadeOutInput = card.querySelector('.image-fade-out');
+  const activeOverlay = () => findOverlay(selectedId) || S.overlays[S.overlays.length - 1] || null;
+  function syncCard(){
+    const o = activeOverlay();
+    card.classList.toggle('hidden', !o);
     if (!o) return;
+    const image = images.get(o.imageId);
+    card.querySelector('.image-card-name').textContent = image ? image.name : '';
+    const thumb = card.querySelector('.image-card-thumb');
+    const url = image && image.url ? 'url("' + image.url + '")' : '';
+    if (thumb.style.backgroundImage !== url) thumb.style.backgroundImage = url;
+    thumb.style.borderRadius = Math.round(o.radius * 50) + '%';
+    const maxFade = Math.max(0, Math.min(5, o.end - o.start));
+    fadeInInput.max = fadeOutInput.max = String(Math.max(0.1, Math.round(maxFade * 10) / 10));
+    if (document.activeElement !== radiusInput) radiusInput.value = String(Math.round(o.radius * 100));
+    if (document.activeElement !== fadeInInput) fadeInInput.value = String(o.fadeIn);
+    if (document.activeElement !== fadeOutInput) fadeOutInput.value = String(o.fadeOut);
+    card.querySelector('.image-radius-out').textContent = Math.round(o.radius * 100) + '%';
+    card.querySelector('.image-fade-in-out').textContent = o.fadeIn.toFixed(1) + ' s';
+    card.querySelector('.image-fade-out-out').textContent = o.fadeOut.toFixed(1) + ' s';
+  }
+  radiusInput.addEventListener('input', () => {
+    const o = activeOverlay(); if (!o) return;
     o.radius = Number(radiusInput.value) / 100;
-    B.requestDraw();
+    syncCard(); B.requestDraw();
   });
-  tools.querySelector('.image-delete').addEventListener('click', () => removeOverlay(selectedId));
-  tools.querySelector('.image-done').addEventListener('click', () => exitEdit());
+  fadeInInput.addEventListener('input', () => {
+    const o = activeOverlay(); if (!o) return;
+    o.fadeIn = clamp(Number(fadeInInput.value), 0, o.end - o.start);
+    syncCard(); renderTrack(); B.requestDraw();
+  });
+  fadeOutInput.addEventListener('input', () => {
+    const o = activeOverlay(); if (!o) return;
+    o.fadeOut = clamp(Number(fadeOutInput.value), 0, o.end - o.start);
+    syncCard(); renderTrack(); B.requestDraw();
+  });
+  card.querySelector('.image-delete').addEventListener('click', () => { const o = activeOverlay(); if (o) removeOverlay(o.id); });
 
   // ---------- Diálogo de fundido ----------
   const dialog = document.createElement('dialog');
@@ -161,6 +198,7 @@
     const value = clamp(parseFloat(String(fadeInput.value).replace(',', '.')) || 0, 0, o.end - o.start);
     if (fadeTarget.kind === 'in') o.fadeIn = value; else o.fadeOut = value;
     renderTrack();
+    syncCard();
     B.requestDraw();
   }
   dialog.addEventListener('close', () => { if (dialog.returnValue === 'ok') applyFade(); fadeTarget = null; });
@@ -171,27 +209,32 @@
   editCanvas.className = 'image-edit-canvas';
   stage.appendChild(editCanvas);
   const editCtx = editCanvas.getContext('2d', {alpha: false});
+  const doneBtn = document.createElement('button');
+  doneBtn.type = 'button';
+  doneBtn.className = 'image-done-pill';
+  doneBtn.textContent = 'Listo';
+  stage.appendChild(doneBtn);
+  ['pointerdown', 'pointerup', 'click'].forEach(type => doneBtn.addEventListener(type, e => e.stopPropagation()));
+  doneBtn.addEventListener('click', () => exitEdit());
 
   function enterEdit(id){
     if (!findOverlay(id)) return;
     selectedId = id;
-    const o = findOverlay(id);
-    radiusInput.value = String(Math.round(o.radius * 100));
-    tools.classList.remove('hidden');
     stage.classList.add('image-mode');
     const size = B.outSize();
     stage.style.aspectRatio = size.w + ' / ' + size.h;
     renderTrack();
+    syncCard();
     B.requestDraw();
   }
   function exitEdit(){
     if (!selectedId && !stage.classList.contains('image-mode')) return;
     selectedId = null;
-    tools.classList.add('hidden');
     stage.classList.remove('image-mode');
     if (S.VW && S.VH) stage.style.aspectRatio = S.VW + ' / ' + S.VH;
     pointers.clear(); gesture = null;
     renderTrack();
+    syncCard();
     try { B.syncCrop(); } catch (error) {}
     B.requestDraw();
   }
@@ -335,14 +378,79 @@
       if (!drag) return;
       const {o, mode, moved} = drag;
       drag = null;
-      if (moved) { if (mode === 'move') enterEdit(o.id); return; }
+      if (moved) { setAnchors(o); syncCard(); if (mode === 'move') enterEdit(o.id); return; }
       if (mode === 'start') openFade(o, 'in');
       else if (mode === 'end') openFade(o, 'out');
       else if (selectedId === o.id) exitEdit();
       else enterEdit(o.id);
     };
     seg.addEventListener('pointerup', finish);
-    seg.addEventListener('pointercancel', () => { drag = null; });
+    seg.addEventListener('pointercancel', () => { if (drag && drag.moved) setAnchors(drag.o); drag = null; });
+  }
+
+
+  // ---------- Efecto imán: la imagen queda anclada al contenido del video ----------
+  function clipLayout(){
+    let offset = 0;
+    return S.clips.map(c => {
+      const item = {c, offset, dur: Math.max(0, c.end - c.start)};
+      offset += item.dur;
+      return item;
+    });
+  }
+  function anchorAt(t, kind){
+    const layout = clipLayout();
+    if (!layout.length) return null;
+    let hit = null;
+    for (const item of layout) {
+      const a = item.offset, b = item.offset + item.dur;
+      if (kind === 'end' ? (t > a + 1e-6 && t <= b + 1e-6) : (t >= a - 1e-6 && t < b - 1e-6)) { hit = item; break; }
+    }
+    if (!hit) hit = kind === 'end' ? layout[layout.length - 1] : layout[0];
+    const local = clamp(t - hit.offset, 0, hit.dur);
+    const c = hit.c;
+    return {sourceId: c.sourceId, rev: !!c.reversed, st: c.reversed ? c.end - local : c.start + local};
+  }
+  function resolveAnchor(anchor, previous){
+    const total = totalDuration();
+    if (!anchor) return clamp(previous, 0, total);
+    let best = null;
+    for (const item of clipLayout()) {
+      const c = item.c;
+      if (c.sourceId !== anchor.sourceId || !!c.reversed !== anchor.rev) continue;
+      const st = clamp(anchor.st, c.start, c.end);
+      const distance = Math.abs(anchor.st - st);
+      const time = item.offset + (c.reversed ? c.end - st : st - c.start);
+      const score = distance * 1000 + Math.abs(time - previous) * 0.001;
+      if (!best || score < best.score) best = {score, time};
+    }
+    return best ? clamp(best.time, 0, total) : clamp(previous, 0, total);
+  }
+  function setAnchors(o){
+    o.aStart = anchorAt(o.start, 'start');
+    o.aEnd = anchorAt(o.end, 'end');
+  }
+  let clipsSignature = '';
+  function clipsKey(){
+    return S.clips.map(c => c.sourceId + ':' + c.start.toFixed(4) + ':' + c.end.toFixed(4) + ':' + (c.reversed ? 1 : 0)).join('|');
+  }
+  function followClips(){
+    const key = clipsKey();
+    if (key === clipsSignature) return;
+    const first = !clipsSignature;
+    clipsSignature = key;
+    if (first) { S.overlays.forEach(o => { if (!o.aStart || !o.aEnd) setAnchors(o); }); return; }
+    for (const o of S.overlays) {
+      if (!o.aStart || !o.aEnd) setAnchors(o);
+      const start = resolveAnchor(o.aStart, o.start);
+      const end = Math.max(start, resolveAnchor(o.aEnd, o.end));
+      o.start = start; o.end = end;
+      o.fadeIn = Math.min(o.fadeIn, end - start);
+      o.fadeOut = Math.min(o.fadeOut, end - start);
+    }
+    renderTrack();
+    syncCard();
+    B.requestDraw();
   }
 
   // ---------- Añadir / quitar ----------
@@ -386,11 +494,11 @@
   async function addImageFile(file){
     const image = await prepareImage(newId('img'), file, (file.name || 'imagen').replace(/\.[^.]+$/, ''));
     const total = totalDuration();
-    let start = clamp(B.currentProjectTime(), 0, total);
-    let end = Math.min(total, start + 5);
-    if (end - start < 1) { start = Math.max(0, total - 5); end = total; }
-    const o = {id: newId('ov'), imageId: image.id, start, end, fadeIn: 0, fadeOut: 0, x: 0.5, y: 0.5, scale: 0.4, rot: 0, radius: 0};
+    const fade = Math.min(1, total / 2);
+    const o = {id: newId('ov'), imageId: image.id, start: 0, end: total, fadeIn: fade, fadeOut: fade, x: 0.5, y: 0.5, scale: 0.4, rot: 0, radius: 0};
+    setAnchors(o);
     S.overlays.push(o);
+    syncCard();
     renderTrack();
     enterEdit(o.id);
   }
@@ -406,6 +514,7 @@
     }
     exitEdit();
     renderTrack();
+    syncCard();
     B.requestDraw();
   }
 
@@ -413,6 +522,9 @@
   let lastTotal = -1, lastWidth = '';
   function loop(){
     if (selectedId && !findOverlay(selectedId)) exitEdit();
+    if (S.overlays.length && !S.exporting) followClips();
+    else if (!S.overlays.length) clipsSignature = '';
+    if (card.classList.contains('hidden') === !!S.overlays.length) syncCard();
     if (stage.classList.contains('image-mode')) {
       const rect = editCanvas.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -440,7 +552,7 @@
     if (S.overlays.length) {
       const total = totalDuration();
       const width = els.timelineContent.style.width || '100%';
-      if (total !== lastTotal) { lastTotal = total; renderTrack(); }
+      if (total !== lastTotal) { lastTotal = total; renderTrack(); syncCard(); }
       if (width !== lastWidth) { lastWidth = width; trackContent.style.width = width; }
       trackContent.style.transform = 'translateX(' + (-strip.scrollLeft) + 'px)';
     } else if (!track.classList.contains('hidden')) {
@@ -469,7 +581,9 @@
       } catch (error) { console.warn('No se pudo recuperar una imagen.', error); }
     }
     S.overlays = (state.overlays || []).filter(o => images.has(o.imageId));
+    clipsSignature = '';
     renderTrack();
+    syncCard();
     B.requestDraw();
   }
 
