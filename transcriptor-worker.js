@@ -105,7 +105,8 @@ self.onmessage = async event => {
       let text = '';
       // Se omiten los tramos casi en silencio (Whisper tiende a inventar texto en ellos).
       if (to - from > RATE * 0.4 && rms(chunk, 0, chunk.length) > 0.004) {
-        const result = await transcriber(chunk, {task: 'transcribe', return_timestamps: false});
+        // Siempre en español.
+        const result = await transcriber(chunk, {language: 'spanish', task: 'transcribe', return_timestamps: false});
         text = clean(result && result.text);
         // Evita repetir el mismo texto si Whisper lo duplica entre tramos.
         if (text && text === previous) text = '';
