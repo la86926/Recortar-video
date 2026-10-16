@@ -63,7 +63,7 @@
   }
   dialog.querySelector('.transcript-close').addEventListener('click', close);
   dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
-  dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
+  // La ventana solo se cierra con la X: seleccionar texto (arrastrando el dedo o el ratón) nunca la cierra.
 
   copyBtn.addEventListener('click', async () => {
     const text = textArea.value;
