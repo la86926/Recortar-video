@@ -671,11 +671,40 @@
     const gainFor = () => () => 1;
     const out = new Float32Array(Math.ceil(total * 16000) + 16);
     let written = 0;
+    // 48 kHz -> 16 kHz con un filtro paso bajo (sinc con ventana de Blackman) para no distorsionar la voz.
+    const TAPS = 63, HALF = (TAPS - 1) / 2, CUTOFF = 7200 / 48000;
+    const kernel = new Float32Array(TAPS);
+    let kernelSum = 0;
+    for (let k = 0; k < TAPS; k++) {
+      const n = k - HALF;
+      const sinc = n === 0 ? 2 * CUTOFF : Math.sin(2 * Math.PI * CUTOFF * n) / (Math.PI * n);
+      const w = 0.42 - 0.5 * Math.cos(2 * Math.PI * k / (TAPS - 1)) + 0.08 * Math.cos(4 * Math.PI * k / (TAPS - 1));
+      kernel[k] = sinc * w;
+      kernelSum += kernel[k];
+    }
+    for (let k = 0; k < TAPS; k++) kernel[k] /= kernelSum;
+    let pending = new Float32Array(0), pendingStart = 0, nextCenter = 0;
+    const filterPending = flush => {
+      const end = pendingStart + pending.length;
+      while (written < out.length && (flush ? nextCenter < end : nextCenter + HALF < end)) {
+        let sum = 0;
+        for (let k = 0; k < TAPS; k++) {
+          const idx = nextCenter - HALF + k - pendingStart;
+          if (idx >= 0 && idx < pending.length) sum += pending[idx] * kernel[k];
+        }
+        out[written++] = sum;
+        nextCenter += 3;
+      }
+      const drop = Math.max(0, Math.min(pending.length, nextCenter - HALF - pendingStart));
+      if (drop) { pending = pending.slice(drop); pendingStart += drop; }
+    };
     const collect = async (data, frames) => {
       const left = data.subarray(0, frames), right = data.subarray(frames, frames * 2);
-      for (let i = 0; i + 2 < frames && written < out.length; i += 3) {
-        out[written++] = (left[i] + left[i + 1] + left[i + 2] + right[i] + right[i + 1] + right[i + 2]) / 6;
-      }
+      const merged = new Float32Array(pending.length + frames);
+      merged.set(pending);
+      for (let i = 0; i < frames; i++) merged[pending.length + i] = (left[i] + right[i]) / 2;
+      pending = merged;
+      filterPending(false);
     };
     const sinks = new Map();
     const inputs = [];
@@ -704,6 +733,7 @@
       if (!anyAudio) throw new Error('sin-audio');
       const ok = await renderPlanAudio(plan, id => sinks.get(id), gainFor, collect, cancelled, progress);
       if (!ok) return null;
+      filterPending(true);
       return out.subarray(0, written);
     } finally {
       inputs.forEach(input => { try { input.dispose(); } catch (error) {} });

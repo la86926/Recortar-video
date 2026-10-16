@@ -121,6 +121,7 @@
         files.forEach(f => { loaded += f.loaded || 0; total += f.total || 0; });
         setProgress(0.15 + 0.25 * (total ? loaded / total : 0), 'Descargando el transcriptor (solo la primera vez)… ' + mb(loaded) + ' de ' + mb(total));
       } else if (data.type === 'status' && data.stage === 'model') {
+        files.clear();
         setProgress(0.15, 'Cargando el transcriptor…');
       } else if (data.type === 'status' && data.stage === 'transcribe') {
         setProgress(0.4, 'Transcribiendo…');

@@ -8,19 +8,34 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
-const MODEL = 'onnx-community/whisper-base';
 const RATE = 16000;
 const WINDOW = 28;      // segundos por tramo (Whisper trabaja con 30 s)
 const SEARCH = 4;       // segundos al final del tramo donde se busca una pausa para cortar
 let asr = null;
 let loading = null;
 
-async function hasWebGPU(){
+async function gpuInfo(){
   try {
-    if (!self.navigator || !navigator.gpu) return false;
+    if (!self.navigator || !navigator.gpu) return null;
     const adapter = await navigator.gpu.requestAdapter();
-    return !!adapter;
-  } catch (error) { return false; }
+    if (!adapter) return null;
+    return {f16: !!(adapter.features && adapter.features.has('shader-f16'))};
+  } catch (error) { return null; }
+}
+
+// Modelos de mejor a más ligero. Se usa el primero que el dispositivo pueda cargar.
+// whisper-small comete bastante menos errores en español que whisper-base.
+function candidates(gpu){
+  const list = [];
+  if (gpu) {
+    list.push({model: 'onnx-community/whisper-small', device: 'webgpu', dtype: {encoder_model: gpu.f16 ? 'fp16' : 'fp32', decoder_model_merged: 'q4'}});
+  }
+  list.push({model: 'onnx-community/whisper-small', device: 'wasm', dtype: {encoder_model: 'q8', decoder_model_merged: 'q8'}});
+  if (gpu) {
+    list.push({model: 'onnx-community/whisper-base', device: 'webgpu', dtype: {encoder_model: 'fp32', decoder_model_merged: 'q4'}});
+  }
+  list.push({model: 'onnx-community/whisper-base', device: 'wasm', dtype: {encoder_model: 'fp32', decoder_model_merged: 'q8'}});
+  return list;
 }
 
 async function load(){
@@ -32,24 +47,19 @@ async function load(){
     }
   };
   loading = (async () => {
-    if (await hasWebGPU()) {
+    const gpu = await gpuInfo();
+    let lastError = null;
+    for (const option of candidates(gpu)) {
       try {
-        asr = await pipeline('automatic-speech-recognition', MODEL, {
-          device: 'webgpu',
-          dtype: {encoder_model: 'fp32', decoder_model_merged: 'q4'},
-          progress_callback
-        });
+        postMessage({type: 'status', stage: 'model', model: option.model});
+        asr = await pipeline('automatic-speech-recognition', option.model, {device: option.device, dtype: option.dtype, progress_callback});
         return asr;
       } catch (error) {
-        postMessage({type: 'note', message: 'WebGPU no disponible, se usa WASM'});
+        lastError = error;
+        postMessage({type: 'note', message: 'No se pudo usar ' + option.model + ' (' + option.device + '): ' + (error && error.message)});
       }
     }
-    asr = await pipeline('automatic-speech-recognition', MODEL, {
-      device: 'wasm',
-      dtype: {encoder_model: 'fp32', decoder_model_merged: 'q8'},
-      progress_callback
-    });
-    return asr;
+    throw lastError || new Error('No se pudo cargar el transcriptor');
   })();
   try { return await loading; }
   finally { loading = null; }
@@ -94,7 +104,6 @@ self.onmessage = async event => {
   const {type, audio} = event.data || {};
   if (type !== 'transcribe') return;
   try {
-    postMessage({type: 'status', stage: 'model'});
     const transcriber = await load();
     postMessage({type: 'status', stage: 'transcribe'});
     const pieces = splitAudio(audio);
