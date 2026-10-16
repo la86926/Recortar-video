@@ -410,7 +410,8 @@ function startCurrentPlayback(){`;
 }`;
   // Botón de exportar partido en dos: audio | video.
   const oldExportButton = `      <button class="btn primary" id="exportBtn" style="flex:1">Exportar proyecto</button>`;
-  const newExportButton = `      <button class="btn primary" id="exportAudioBtn" type="button" style="flex:1">Exportar audio</button>
+  const newExportButton = `      <button class="btn primary" id="transcribeBtn" type="button" style="flex:1">Transcripción</button>
+      <button class="btn primary" id="exportAudioBtn" type="button" style="flex:1">Exportar audio</button>
       <button class="btn primary" id="exportBtn" style="flex:1">Exportar video</button>`;
 
   // Fluidez al reproducir: menos trabajo por fotograma y sin competir con el video.
@@ -493,7 +494,7 @@ bindFrameStepRepeat(els.stepForward,1);`;
   // Versión visible en la cabecera.
   const oldBrandTitle = `<h1>Re<em>corte</em></h1>`;
   const newBrandTitle = `<h1>Re<em>corte</em></h1>
-      <small class="app-version">v2.0.3</small>`;
+      <small class="app-version">v2.0.4</small>`;
 
   // Vista flotante más pequeña en el móvil (se puede agrandar con dos dedos).
   const oldFloatMinWidth = `  const minWidth=Math.min(110,maxWidth);`;
@@ -564,11 +565,19 @@ function drawOverlays(ctx,w,h,t){
 }
 window.RecorteBridge={
   S,els,drawComposite,currentProjectTime,projectDuration,outSize,syncCrop,
-  requestDraw:()=>{ needsDraw=true; }
+  requestDraw:()=>{ needsDraw=true; },
+  loadFastExporter:()=>loadFastExporter(),
+  exportApp:()=>({S,els,buildExportPlan,sourceById,fadeFactor,setExportResult,fmt}),
+  version:'2.0.4'
 };
+(function(){
+  const script=document.createElement('script');
+  script.src='transcripcion.js?v=2.0.4';
+  document.head.appendChild(script);
+})();
 window.RecorteImagenesReady=new Promise(resolve=>{
   const script=document.createElement('script');
-  script.src='imagenes.js?v=2.0.3';
+  script.src='imagenes.js?v=2.0.4';
   script.onload=()=>resolve(window.RecorteImagenes||null);
   script.onerror=()=>resolve(null);
   document.head.appendChild(script);
@@ -902,6 +911,33 @@ html[data-theme="dark"] .editor-toolbar .danger-tool{
 .brand{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .brand:focus-visible{outline:3px solid rgba(31,191,91,.45);outline-offset:4px;border-radius:12px}
 #resetDialog .btn.primary{background:var(--action) !important;color:#FFFFFF !important}
+/* Transcripción | Exportar audio | Exportar video */
+@media(max-width:520px){
+  #bar .inner > div:last-child{gap:7px !important}
+  #bar .inner > div:last-child .btn{padding-left:6px;padding-right:6px;font-size:14px;white-space:nowrap;min-width:0}
+}
+.transcript-dialog{
+  width:min(560px,calc(100vw - 24px));max-height:min(80vh,680px);padding:0;border:0;border-radius:20px;
+  background:var(--surface);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.32)
+}
+.transcript-dialog[open]{display:flex;flex-direction:column}
+.transcript-dialog::backdrop{background:rgba(12,13,11,.43);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.transcript-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 16px 10px 20px;border-bottom:1px solid var(--line)}
+.transcript-head h3{margin:0;font-size:18px;letter-spacing:-.02em}
+.transcript-close{flex:0 0 36px;width:36px;height:36px;display:grid;place-items:center;appearance:none;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--text);cursor:pointer;padding:0}
+.transcript-close svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.transcript-status{padding:14px 20px 0}
+.transcript-status[hidden]{display:none}
+.transcript-msg{margin:0 0 8px;font-size:13.5px;color:var(--text-2)}
+.transcript-bar{height:6px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.transcript-bar[hidden]{display:none}
+.transcript-bar i{display:block;height:100%;width:0;background:var(--action);border-radius:inherit;transition:width .2s ease}
+.transcript-text{
+  flex:1;min-height:220px;margin:14px 20px 0;padding:12px 14px;resize:none;border:1px solid var(--line);border-radius:14px;
+  background:var(--surface-2);color:var(--text);font:400 15.5px/1.55 var(--sans);-webkit-user-select:text;user-select:text
+}
+.transcript-foot{display:flex;justify-content:flex-end;padding:14px 20px 18px}
+.transcript-foot .btn{min-width:120px}
 /* Exportar audio | Exportar video */
 #bar .inner > div:last-child{gap:10px !important}
 /* Barra de herramientas: 9 botones; en el móvil, dos filas (5 + 4) */

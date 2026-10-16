@@ -658,5 +658,57 @@
     }
   }
 
-  window.RecorteRapido = {exportar, exportarAudio};
+
+  // ===== Audio del proyecto en 16 kHz mono (para la transcripción) =====
+  async function audioParaTranscribir(app, onProgress, isCancelled){
+    const plan = app.buildExportPlan().filter(clip => clip.end - clip.start > 0.0005);
+    if (!plan.length) throw new Error('sin-audio');
+    const sources = [...new Set(plan.map(clip => clip.sourceId))].map(id => app.sourceById(id));
+    if (sources.some(source => !source || !source.file)) throw new Error('No se pudo leer el video.');
+    const total = plan.reduce((sum, clip) => sum + (clip.end - clip.start), 0);
+    const cancelled = () => !!(isCancelled && isCancelled());
+    const progress = done => { if (onProgress) onProgress(total ? clamp(done / total, 0, 1) : 1); };
+    const gainFor = () => () => 1;
+    const out = new Float32Array(Math.ceil(total * 16000) + 16);
+    let written = 0;
+    const collect = async (data, frames) => {
+      const left = data.subarray(0, frames), right = data.subarray(frames, frames * 2);
+      for (let i = 0; i + 2 < frames && written < out.length; i += 3) {
+        out[written++] = (left[i] + left[i + 1] + left[i + 2] + right[i] + right[i + 1] + right[i + 2]) / 6;
+      }
+    };
+    const sinks = new Map();
+    const inputs = [];
+    let anyAudio = false;
+    try {
+      let MB = null;
+      try { MB = await loadLibrary(); } catch (error) { MB = null; }
+      for (const source of sources) {
+        let sink = null;
+        if (MB && typeof AudioDecoder === 'function') {
+          try {
+            const input = new MB.Input({source: new MB.BlobSource(source.file), formats: MB.ALL_FORMATS});
+            inputs.push(input);
+            const track = await input.getPrimaryAudioTrack();
+            if (track && await track.canDecode()) sink = new MB.AudioBufferSink(track);
+            else if (!track) { sinks.set(source.id, null); continue; }
+          } catch (error) { sink = null; }
+        }
+        if (!sink) {
+          const decoded = await decodeWithWebAudio(source.file);
+          sink = decoded ? decodedSink(decoded) : null;
+        }
+        if (sink) anyAudio = true;
+        sinks.set(source.id, sink);
+      }
+      if (!anyAudio) throw new Error('sin-audio');
+      const ok = await renderPlanAudio(plan, id => sinks.get(id), gainFor, collect, cancelled, progress);
+      if (!ok) return null;
+      return out.subarray(0, written);
+    } finally {
+      inputs.forEach(input => { try { input.dispose(); } catch (error) {} });
+    }
+  }
+
+  window.RecorteRapido = {exportar, exportarAudio, audioParaTranscribir};
 })();
